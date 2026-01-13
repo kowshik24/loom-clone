@@ -131,15 +131,6 @@ body {
   font-size: 16px;
 }
 
-.btn-stop {
-  background: #FF3B3B;
-  color: white;
-}
-
-.btn-stop:hover:not(:disabled) {
-  background: #E62E2E;
-}
-
 /* Recording Mode Options */
 .recording-modes {
   display: flex;
