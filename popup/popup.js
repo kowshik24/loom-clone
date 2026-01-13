@@ -206,7 +206,7 @@ startBtn.addEventListener('click', async () => {
     recordingSection.classList.add('hidden');
     countdownSection.classList.remove('hidden');
 
-    // Store the tab ID to re-inject overlay if needed
+    // Store the tab ID for overlay injection
     const recordingTabId = tab.id;
 
     // Start countdown
@@ -354,10 +354,11 @@ async function startCountdown() {
         countdownNumber.textContent = count;
       }
       
-      if (count === 0) {
+      count--;
+      
+      if (count < 0) {
         resolve();
       } else {
-        count--;
         setTimeout(updateCountdown, 1000);
       }
     };
@@ -677,6 +678,7 @@ function cleanup() {
 // Keep popup window persistent during recording
 // This prevents the popup from being garbage collected when focus changes
 let keepAliveInterval = null;
+let keepAliveFailureCount = 0;
 
 function startKeepAlive() {
   if (keepAliveInterval) return;
@@ -684,9 +686,19 @@ function startKeepAlive() {
   // Ping the background script periodically to keep the popup alive
   keepAliveInterval = setInterval(() => {
     if (isRecording) {
-      chrome.runtime.sendMessage({ type: 'KEEP_ALIVE' }).catch(() => {
-        // Ignore errors
-      });
+      chrome.runtime.sendMessage({ type: 'KEEP_ALIVE' })
+        .then(() => {
+          keepAliveFailureCount = 0; // Reset on success
+        })
+        .catch((error) => {
+          keepAliveFailureCount++;
+          console.warn(`Keep-alive failed (attempt ${keepAliveFailureCount}):`, error);
+          
+          // If too many failures, log warning but continue recording
+          if (keepAliveFailureCount >= 3) {
+            console.error('Keep-alive mechanism failing - popup may be at risk of termination');
+          }
+        });
     } else {
       stopKeepAlive();
     }
@@ -697,6 +709,7 @@ function stopKeepAlive() {
   if (keepAliveInterval) {
     clearInterval(keepAliveInterval);
     keepAliveInterval = null;
+    keepAliveFailureCount = 0;
   }
 }
 
