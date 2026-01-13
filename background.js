@@ -123,6 +123,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  // Handle keep-alive ping from popup during recording
+  if (request.type === 'KEEP_ALIVE') {
+    sendResponse({ alive: true });
+    return true;
+  }
+
   // Handle start recording
   if (request.type === 'START_RECORDING' && !request.toOffscreen) {
     // ... forwarding logic ...

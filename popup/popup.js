@@ -16,6 +16,7 @@ let recordedChunks = [];
 // DOM elements
 const authSection = document.getElementById('auth-section');
 const recordingSection = document.getElementById('recording-section');
+const countdownSection = document.getElementById('countdown-section');
 const recordingActiveSection = document.getElementById('recording-active-section');
 const uploadSection = document.getElementById('upload-section');
 const uploadCompleteSection = document.getElementById('upload-complete-section');
@@ -29,6 +30,7 @@ const uploadStatus = document.getElementById('upload-status');
 const driveLink = document.getElementById('drive-link');
 const copyLinkBtn = document.getElementById('copy-link-btn');
 const recordingTimer = document.getElementById('recording-timer');
+const countdownNumber = document.getElementById('countdown-number');
 
 // Mode selection elements
 const modeOptions = document.querySelectorAll('.mode-option');
@@ -156,31 +158,7 @@ startBtn.addEventListener('click', async () => {
       return;
     }
 
-    // Inject content script for overlay
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ['content/overlay.js']
-      });
-      await chrome.scripting.insertCSS({
-        target: { tabId: tab.id },
-        files: ['content/overlay.css']
-      });
-    } catch (e) {
-      console.log('Script injection:', e);
-    }
-
-    // Show overlay
-    try {
-      await chrome.tabs.sendMessage(tab.id, {
-        type: 'SHOW_OVERLAY',
-        mode: selectedMode
-      });
-    } catch (e) {
-      console.log('Overlay message:', e);
-    }
-
-    // Request screen capture (THIS WILL WORK - popup has user gesture!)
+    // Request screen capture first (THIS WILL WORK - popup has user gesture!)
     console.log('Popup: Requesting screen capture...');
     try {
       screenStream = await navigator.mediaDevices.getDisplayMedia({
@@ -223,16 +201,51 @@ startBtn.addEventListener('click', async () => {
       mergedStream = screenStream;
     }
 
+    // Show countdown before starting recording
+    hideStatus();
+    recordingSection.classList.add('hidden');
+    countdownSection.classList.remove('hidden');
+
+    // Store the tab ID to re-inject overlay if needed
+    const recordingTabId = tab.id;
+
+    // Start countdown
+    await startCountdown();
+
+    // Inject content script for overlay (after countdown)
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: recordingTabId },
+        files: ['content/overlay.js']
+      });
+      await chrome.scripting.insertCSS({
+        target: { tabId: recordingTabId },
+        files: ['content/overlay.css']
+      });
+    } catch (e) {
+      console.log('Script injection:', e);
+    }
+
+    // Show overlay
+    try {
+      await chrome.tabs.sendMessage(recordingTabId, {
+        type: 'SHOW_OVERLAY',
+        mode: selectedMode
+      });
+    } catch (e) {
+      console.log('Overlay message:', e);
+    }
+
     // Start MediaRecorder
     console.log('Popup: Starting MediaRecorder...');
     startMediaRecorder();
 
     // Update UI - Show recording status without stop button
     isRecording = true;
-    recordingSection.classList.add('hidden');
+    countdownSection.classList.add('hidden');
     recordingActiveSection.classList.remove('hidden');
     startRecordingTimer();
-    hideStatus();
+    startKeepAlive(); // Keep popup alive during recording
 
     console.log('Popup: Recording started successfully!');
 
@@ -250,8 +263,9 @@ async function stopRecording() {
   console.log('Popup: Stop recording requested');
 
   try {
-    // Stop timer
+    // Stop timer and keep-alive
     stopRecordingTimer();
+    stopKeepAlive();
     isRecording = false;
 
     // Hide overlay
@@ -328,6 +342,28 @@ function updateTimerDisplay() {
   const seconds = elapsed % 60;
 
   recordingTimer.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+// Countdown before recording starts
+async function startCountdown() {
+  return new Promise((resolve) => {
+    let count = 3;
+    
+    const updateCountdown = () => {
+      if (countdownNumber) {
+        countdownNumber.textContent = count;
+      }
+      
+      if (count === 0) {
+        resolve();
+      } else {
+        count--;
+        setTimeout(updateCountdown, 1000);
+      }
+    };
+    
+    updateCountdown();
+  });
 }
 
 // Show upload complete with link
@@ -636,6 +672,32 @@ function cleanup() {
 
   mediaRecorder = null;
   recordedChunks = [];
+}
+
+// Keep popup window persistent during recording
+// This prevents the popup from being garbage collected when focus changes
+let keepAliveInterval = null;
+
+function startKeepAlive() {
+  if (keepAliveInterval) return;
+  
+  // Ping the background script periodically to keep the popup alive
+  keepAliveInterval = setInterval(() => {
+    if (isRecording) {
+      chrome.runtime.sendMessage({ type: 'KEEP_ALIVE' }).catch(() => {
+        // Ignore errors
+      });
+    } else {
+      stopKeepAlive();
+    }
+  }, 5000); // Every 5 seconds
+}
+
+function stopKeepAlive() {
+  if (keepAliveInterval) {
+    clearInterval(keepAliveInterval);
+    keepAliveInterval = null;
+  }
 }
 
 // Initialize on load

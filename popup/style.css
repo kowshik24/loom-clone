@@ -266,6 +266,48 @@ body {
   margin: 0;
 }
 
+/* Countdown Section */
+.countdown-content {
+  text-align: center;
+  padding: 20px 0;
+}
+
+.countdown-content h2 {
+  font-size: 22px;
+  font-weight: 600;
+  color: #1A1A1A;
+  margin-bottom: 24px;
+}
+
+.countdown-circle {
+  width: 120px;
+  height: 120px;
+  margin: 0 auto 24px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #625DF5 0%, #8B87FF 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 32px rgba(98, 93, 245, 0.3);
+  animation: countdown-pulse 1s ease-in-out infinite;
+}
+
+.countdown-circle span {
+  font-size: 56px;
+  font-weight: 700;
+  color: white;
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes countdown-pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
 /* Upload Progress */
 .upload-progress {
   text-align: center;
