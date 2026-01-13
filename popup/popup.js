@@ -22,7 +22,6 @@ const uploadCompleteSection = document.getElementById('upload-complete-section')
 const recordingsSection = document.getElementById('recordings-section');
 const connectBtn = document.getElementById('connect-btn');
 const startBtn = document.getElementById('start-btn');
-const stopBtn = document.getElementById('stop-btn');
 const statusDiv = document.getElementById('status');
 const progressBar = document.getElementById('progress-fill');
 const progressText = document.getElementById('progress-text');
@@ -228,7 +227,7 @@ startBtn.addEventListener('click', async () => {
     console.log('Popup: Starting MediaRecorder...');
     startMediaRecorder();
 
-    // Update UI
+    // Update UI - Show recording status without stop button
     isRecording = true;
     recordingSection.classList.add('hidden');
     recordingActiveSection.classList.remove('hidden');
@@ -246,10 +245,9 @@ startBtn.addEventListener('click', async () => {
   }
 });
 
-// Handle stop recording button (in popup) - NEW VERSION
-stopBtn.addEventListener('click', async () => {
-  stopBtn.disabled = true;
-  console.log('Popup: Stop button clicked');
+// Handle stop recording - called when overlay requests stop
+async function stopRecording() {
+  console.log('Popup: Stop recording requested');
 
   try {
     // Stop timer
@@ -279,10 +277,8 @@ stopBtn.addEventListener('click', async () => {
     cleanup();
     recordingActiveSection.classList.add('hidden');
     recordingSection.classList.remove('hidden');
-  } finally {
-    stopBtn.disabled = false;
   }
-});
+}
 
 // Show status message
 function showStatus(message, type = 'info') {
@@ -374,7 +370,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // Handle stop request from overlay
   if (request.type === 'STOP_RECORDING_FROM_OVERLAY') {
     console.log('Popup: Received stop request from overlay');
-    stopBtn.click(); // Trigger the stop button
+    stopRecording(); // Call the stop recording function
     sendResponse({ success: true });
     return;
   }

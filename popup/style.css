@@ -262,9 +262,17 @@ body {
   font-weight: 700;
   color: #1A1A1A;
   text-align: center;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
   font-variant-numeric: tabular-nums;
   letter-spacing: 2px;
+}
+
+.recording-hint {
+  font-size: 13px;
+  color: #6B6B6B;
+  text-align: center;
+  line-height: 1.5;
+  margin: 0;
 }
 
 /* Upload Progress */
