@@ -1,0 +1,29 @@
+# Client secrets and credentials
+client_secret*.json
+*.pem
+*.key
+
+# Node modules (if you add any build tools)
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Extension build files
+*.crx
+*.pem
+*.zip
+
+# Logs
+*.log
+fixes
+.env
+client_secret*.json

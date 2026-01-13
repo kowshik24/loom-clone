@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Loom Clone</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <div class="container">
+    <!-- Header with Logo -->
+    <div class="header">
+      <div class="logo">
+        <svg width="28" height="28" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="16" cy="16" r="14" fill="#625DF5" />
+          <circle cx="16" cy="16" r="6" fill="white" />
+          <circle cx="16" cy="16" r="3" fill="#625DF5" />
+        </svg>
+        <span>Loom</span>
+      </div>
+      <button id="view-recordings-btn" class="btn btn-icon" title="View your recordings">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <rect x="2" y="4" width="16" height="12" rx="1" stroke="currentColor" stroke-width="1.5" fill="none" />
+          <circle cx="10" cy="10" r="2.5" fill="currentColor" />
+        </svg>
+      </button>
+    </div>
+
+    <!-- Auth Section -->
+    <div id="auth-section" class="section">
+      <div class="auth-content">
+        <div class="auth-icon">
+          <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="24" cy="24" r="20" fill="#F5F5FF" />
+            <path d="M24 14V34M14 24H34" stroke="#625DF5" stroke-width="2.5" stroke-linecap="round" />
+          </svg>
+        </div>
+        <h2>Welcome to Loom</h2>
+        <p class="description">Connect your Google Drive to save and share your recordings</p>
+        <button id="connect-btn" class="btn btn-primary">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path
+              d="M17.64 9.205c0-.638-.057-1.252-.164-1.841H9v3.481h4.844a4.14 4.14 0 01-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"
+              fill="#4285F4" />
+            <path
+              d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z"
+              fill="#34A853" />
+            <path
+              d="M3.964 10.71A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"
+              fill="#FBBC05" />
+            <path
+              d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"
+              fill="#EA4335" />
+          </svg>
+          Connect with Google Drive
+        </button>
+      </div>
+    </div>
+
+    <!-- Recording Mode Selection -->
+    <div id="recording-section" class="section hidden">
+      <h2 class="section-title">Start Recording</h2>
+
+      <!-- Recording Mode Options -->
+      <div class="recording-modes">
+        <div class="mode-option" data-mode="screen-camera" id="mode-screen-camera">
+          <div class="mode-icon">
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+              <rect x="2" y="6" width="22" height="16" rx="2" stroke="currentColor" stroke-width="2" fill="none" />
+              <circle cx="26" cy="22" r="4" stroke="currentColor" stroke-width="2" fill="none" />
+            </svg>
+          </div>
+          <div class="mode-info">
+            <h3>Screen + Camera</h3>
+            <p>Record your screen with camera</p>
+          </div>
+          <div class="mode-check">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <path d="M16.667 5L7.5 14.167 3.333 10" stroke="white" stroke-width="2.5" stroke-linecap="round"
+                stroke-linejoin="round" />
+            </svg>
+          </div>
+        </div>
+
+        <div class="mode-option" data-mode="screen-only" id="mode-screen-only">
+          <div class="mode-icon">
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+              <rect x="4" y="6" width="24" height="16" rx="2" stroke="currentColor" stroke-width="2" fill="none" />
+            </svg>
+          </div>
+          <div class="mode-info">
+            <h3>Screen Only</h3>
+            <p>Record just your screen</p>
+          </div>
+          <div class="mode-check">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <path d="M16.667 5L7.5 14.167 3.333 10" stroke="white" stroke-width="2.5" stroke-linecap="round"
+                stroke-linejoin="round" />
+            </svg>
+          </div>
+        </div>
+
+        <div class="mode-option" data-mode="camera-only" id="mode-camera-only">
+          <div class="mode-icon">
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+              <circle cx="16" cy="16" r="10" stroke="currentColor" stroke-width="2" fill="none" />
+            </svg>
+          </div>
+          <div class="mode-info">
+            <h3>Camera Only</h3>
+            <p>Record just your camera</p>
+          </div>
+          <div class="mode-check">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <path d="M16.667 5L7.5 14.167 3.333 10" stroke="white" stroke-width="2.5" stroke-linecap="round"
+                stroke-linejoin="round" />
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <button id="start-btn" class="btn btn-primary btn-large">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+          <circle cx="10" cy="10" r="8" fill="white" />
+        </svg>
+        Start Recording
+      </button>
+    </div>
+
+    <!-- Recording Active State -->
+    <div id="recording-active-section" class="section hidden">
+      <div class="recording-indicator">
+        <div class="recording-pulse"></div>
+        <span>Recording...</span>
+      </div>
+      <div class="recording-timer" id="recording-timer">00:00</div>
+      <button id="stop-btn" class="btn btn-stop">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="white">
+          <rect width="16" height="16" rx="2" />
+        </svg>
+        Stop Recording
+      </button>
+    </div>
+
+    <!-- Upload Progress Section -->
+    <div id="upload-section" class="section hidden">
+      <div class="upload-progress">
+        <div class="upload-icon">
+          <svg class="spinner" width="48" height="48" viewBox="0 0 48 48">
+            <circle cx="24" cy="24" r="20" stroke="#E0E0E0" stroke-width="4" fill="none" />
+            <circle cx="24" cy="24" r="20" stroke="#625DF5" stroke-width="4" fill="none" stroke-dasharray="125.6"
+              stroke-dashoffset="31.4" stroke-linecap="round" />
+          </svg>
+        </div>
+        <h3 id="upload-status">Processing video...</h3>
+        <div class="progress-bar-container">
+          <div class="progress-bar" id="progress-bar">
+            <div class="progress-fill" id="progress-fill"></div>
+          </div>
+        </div>
+        <p class="progress-text" id="progress-text">0%</p>
+      </div>
+    </div>
+
+    <!-- Upload Complete Section -->
+    <div id="upload-complete-section" class="section hidden">
+      <div class="success-animation">
+        <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+          <circle cx="32" cy="32" r="30" fill="#E8F5E9" />
+          <path d="M20 32L28 40L44 24" stroke="#34A853" stroke-width="3" stroke-linecap="round"
+            stroke-linejoin="round" />
+        </svg>
+      </div>
+      <h2>Video uploaded successfully!</h2>
+      <p class="description">Your recording is ready to share</p>
+
+      <div class="upload-actions">
+        <button id="copy-link-btn" class="btn btn-primary btn-large">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path d="M6 11.5L12 5.5M12 11.5V5.5H6" stroke="white" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round" />
+          </svg>
+          Copy Link
+        </button>
+        <a id="drive-link" href="#" target="_blank" class="btn btn-secondary">
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <path d="M6 2L12 11H0L6 2Z" fill="currentColor" />
+            <path d="M12 11L18 11L15 16L9 16L12 11Z" fill="currentColor" />
+            <path d="M0 11H12L9 16H3L0 11Z" fill="currentColor" />
+          </svg>
+          Open in Drive
+        </a>
+      </div>
+
+      <button id="new-recording-btn" class="btn btn-text" style="margin-top: 16px;">
+        ← Back to Recording
+      </button>
+    </div>
+
+    <!-- Recordings Library Section -->
+    <div id="recordings-section" class="section hidden">
+      <div class="section-header">
+        <h2 class="section-title">Your Recordings</h2>
+        <button id="view-folder-btn" class="btn btn-icon" title="Open folder in Drive">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <path d="M3 3L8 8H0L3 3Z" fill="currentColor" />
+            <path d="M8 8L14 8L11 13L5 13L8 8Z" fill="currentColor" />
+            <path d="M0 8H8L5 13H1L0 8Z" fill="currentColor" />
+          </svg>
+        </button>
+        <button id="back-to-recording-btn" class="btn btn-icon" title="Back">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <path d="M12 4L6 10L12 16" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+              stroke-linejoin="round" />
+          </svg>
+        </button>
+      </div>
+
+      <div id="recordings-list" class="recordings-list">
+        <!-- Recording items will be inserted here dynamically -->
+      </div>
+
+      <div id="no-recordings" class="no-recordings hidden">
+        <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+          <circle cx="32" cy="32" r="30" fill="#F5F5FF" />
+          <path d="M32 20V44M20 32H44" stroke="#625DF5" stroke-width="3" stroke-linecap="round" />
+        </svg>
+        <p>No recordings yet</p>
+        <p class="description">Start recording to see your videos here</p>
+      </div>
+    </div>
+
+    <!-- Status Messages -->
+    <div id="status" class="status hidden"></div>
+
+    <!-- Help Section -->
+    <div class="help-section">
+      <details>
+        <summary>Setup Help</summary>
+        <div class="help-content">
+          <p><strong>Extension ID:</strong> <code id="extension-id">Loading...</code></p>
+          <p>Add this to Google Cloud Console OAuth client as:<br>
+            <code>chrome-extension://<span id="extension-id-short">...</span></code>
+          </p>
+        </div>
+      </details>
+    </div>
+  </div>
+  <script src="popup-recordings.js"></script>
+  <script src="popup.js"></script>
+</body>
+
+</html>

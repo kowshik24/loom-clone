@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "Drive Loom Clone",
+  "version": "2.0.0",
+  "description": "Professional screen recording with camera overlay, pause/resume, and Google Drive integration. Choose from Screen+Camera, Screen Only, or Camera Only modes.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "identity",
+    "offscreen",
+    "notifications",
+    "tabs",
+    "desktopCapture"
+  ],
+  "host_permissions": [
+    "https://www.googleapis.com/*",
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup/popup.html"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["content/overlay.css", "offscreen/recorder.html"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "oauth2": {
+    "client_id": "YOUR_CLIENT_ID.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/drive.file",
+      "https://www.googleapis.com/auth/userinfo.email"
+    ]
+  }
+}
+
