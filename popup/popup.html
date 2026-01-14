@@ -20,12 +20,14 @@
         </svg>
         <span>Loom</span>
       </div>
-      <button id="view-recordings-btn" class="btn btn-icon" title="View your recordings">
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-          <rect x="2" y="4" width="16" height="12" rx="1" stroke="currentColor" stroke-width="1.5" fill="none" />
-          <circle cx="10" cy="10" r="2.5" fill="currentColor" />
-        </svg>
-      </button>
+      <div class="header-actions">
+        <button id="view-recordings-btn" class="btn btn-icon" title="View your recordings" aria-label="View recordings">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <rect x="2" y="4" width="16" height="12" rx="1" stroke="currentColor" stroke-width="1.5" fill="none" />
+            <circle cx="10" cy="10" r="2.5" fill="currentColor" />
+          </svg>
+        </button>
+      </div>
     </div>
 
     <!-- Auth Section -->
@@ -209,19 +211,21 @@
     <div id="recordings-section" class="section hidden">
       <div class="section-header">
         <h2 class="section-title">Your Recordings</h2>
-        <button id="view-folder-btn" class="btn btn-icon" title="Open folder in Drive">
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-            <path d="M3 3L8 8H0L3 3Z" fill="currentColor" />
-            <path d="M8 8L14 8L11 13L5 13L8 8Z" fill="currentColor" />
-            <path d="M0 8H8L5 13H1L0 8Z" fill="currentColor" />
-          </svg>
-        </button>
-        <button id="back-to-recording-btn" class="btn btn-icon" title="Back">
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-            <path d="M12 4L6 10L12 16" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-              stroke-linejoin="round" />
-          </svg>
-        </button>
+        <div class="section-header-actions">
+          <button id="view-folder-btn" class="btn btn-icon" title="Open folder in Drive" aria-label="Open Drive folder">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <path d="M3 3L8 8H0L3 3Z" fill="currentColor" />
+              <path d="M8 8L14 8L11 13L5 13L8 8Z" fill="currentColor" />
+              <path d="M0 8H8L5 13H1L0 8Z" fill="currentColor" />
+            </svg>
+          </button>
+          <button id="back-to-recording-btn" class="btn btn-icon" title="Back" aria-label="Back to recording">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <path d="M12 4L6 10L12 16" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       <div id="recordings-list" class="recordings-list">
