@@ -30,12 +30,12 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["content/overlay.css", "offscreen/recorder.html"],
+      "resources": ["content/overlay.css", "offscreen/recorder.html", "popup/mic-permission.html", "popup/mic-permission.js"],
       "matches": ["<all_urls>"]
     }
   ],
   "oauth2": {
-    "client_id": "YOUR_CLIENT_ID.apps.googleusercontent.com",
+    "client_id": "75502489040-rp66t46hape05tfuok6sdq6h0fd0bi3v.apps.googleusercontent.com",
     "scopes": [
       "https://www.googleapis.com/auth/drive.file",
       "https://www.googleapis.com/auth/userinfo.email"

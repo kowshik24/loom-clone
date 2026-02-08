@@ -212,6 +212,58 @@ body {
   display: none;
 }
 
+/* Audio Settings */
+.audio-settings {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+  padding: 12px 16px;
+  background: #F9F9F9;
+  border-radius: 8px;
+  border: 1px solid #E8E8E8;
+}
+
+.audio-settings label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #1A1A1A;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.audio-settings label svg {
+  width: 16px;
+  height: 16px;
+  color: #625DF5;
+}
+
+.audio-select {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #E0E0E0;
+  border-radius: 6px;
+  background: white;
+  color: #1A1A1A;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.audio-select:hover {
+  border-color: #625DF5;
+}
+
+.audio-select:focus {
+  outline: none;
+  border-color: #625DF5;
+  box-shadow: 0 0 0 3px rgba(98, 93, 245, 0.1);
+}
+
 /* Recording Active State */
 .recording-indicator {
   display: flex;

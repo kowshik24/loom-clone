@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enable Microphone - Loom</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    
+    body {
+      margin: 0;
+      padding: 40px;
+      background: linear-gradient(135deg, #625DF5 0%, #8B5CF6 50%, #A855F7 100%);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    
+    .container {
+      background: white;
+      padding: 48px 40px;
+      border-radius: 24px;
+      box-shadow: 0 25px 80px rgba(0, 0, 0, 0.35);
+      text-align: center;
+      max-width: 480px;
+      width: 100%;
+    }
+    
+    .logo {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 32px;
+    }
+    
+    .logo svg {
+      width: 40px;
+      height: 40px;
+    }
+    
+    .logo span {
+      font-size: 24px;
+      font-weight: 700;
+      color: #1A1A1A;
+      letter-spacing: -0.5px;
+    }
+    
+    .icon {
+      width: 100px;
+      height: 100px;
+      background: linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 28px;
+      box-shadow: 0 8px 32px rgba(98, 93, 245, 0.15);
+    }
+    
+    .icon svg {
+      width: 48px;
+      height: 48px;
+      color: #625DF5;
+    }
+    
+    h1 {
+      margin: 0 0 12px;
+      font-size: 28px;
+      font-weight: 700;
+      color: #1A1A1A;
+      letter-spacing: -0.5px;
+    }
+    
+    p {
+      margin: 0 0 28px;
+      color: #6B7280;
+      line-height: 1.6;
+      font-size: 15px;
+    }
+    
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 16px 32px;
+      border: none;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      width: 100%;
+    }
+    
+    .btn-primary {
+      background: #625DF5;
+      color: white;
+    }
+    
+    .btn-primary:hover:not(:disabled) {
+      background: #534AE2;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(98, 93, 245, 0.4);
+    }
+    
+    .btn-primary:disabled {
+      background: #A5B4FC;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+    
+    .btn-primary.success {
+      background: #10B981;
+    }
+    
+    .btn-primary.success:hover {
+      background: #059669;
+    }
+    
+    .btn-secondary {
+      background: #F3F4F6;
+      color: #4B5563;
+      margin-top: 12px;
+    }
+    
+    .btn-secondary:hover {
+      background: #E5E7EB;
+    }
+    
+    .status {
+      margin-top: 20px;
+      padding: 14px 18px;
+      border-radius: 12px;
+      font-size: 14px;
+      display: none;
+      line-height: 1.5;
+    }
+    
+    .status.success {
+      display: block;
+      background: #D1FAE5;
+      color: #065F46;
+      border: 1px solid #A7F3D0;
+    }
+    
+    .status.error {
+      display: block;
+      background: #FEE2E2;
+      color: #991B1B;
+      border: 1px solid #FECACA;
+    }
+    
+    .status.info {
+      display: block;
+      background: #EEF2FF;
+      color: #3730A3;
+      border: 1px solid #C7D2FE;
+    }
+    
+    .device-select-container {
+      margin-top: 24px;
+      padding: 20px;
+      background: #F9FAFB;
+      border-radius: 12px;
+      text-align: left;
+      display: none;
+    }
+    
+    .device-select-container label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 10px;
+    }
+    
+    .device-select-container label svg {
+      width: 18px;
+      height: 18px;
+      color: #625DF5;
+    }
+    
+    .device-select {
+      width: 100%;
+      padding: 12px 14px;
+      border: 2px solid #E5E7EB;
+      border-radius: 10px;
+      font-size: 14px;
+      color: #1F2937;
+      background: white;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    
+    .device-select:hover {
+      border-color: #C7D2FE;
+    }
+    
+    .device-select:focus {
+      outline: none;
+      border-color: #625DF5;
+      box-shadow: 0 0 0 3px rgba(98, 93, 245, 0.1);
+    }
+    
+    .instructions {
+      margin-top: 24px;
+      padding: 18px;
+      background: #FFFBEB;
+      border-radius: 12px;
+      text-align: left;
+      font-size: 14px;
+      border: 1px solid #FDE68A;
+    }
+    
+    .instructions h3 {
+      margin: 0 0 12px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #92400E;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    
+    .instructions ol {
+      margin: 0;
+      padding-left: 20px;
+      color: #78350F;
+    }
+    
+    .instructions li {
+      margin-bottom: 8px;
+      line-height: 1.5;
+    }
+    
+    .close-timer {
+      margin-top: 16px;
+      font-size: 13px;
+      color: #9CA3AF;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    .spinner-icon {
+      animation: spin 1s linear infinite;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Loom-style Logo -->
+    <div class="logo">
+      <svg viewBox="0 0 32 32" fill="none">
+        <circle cx="16" cy="16" r="14" fill="#625DF5"/>
+        <circle cx="16" cy="16" r="6" fill="white"/>
+        <circle cx="16" cy="16" r="3" fill="#625DF5"/>
+      </svg>
+      <span>Loom</span>
+    </div>
+    
+    <div class="icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+        <line x1="12" y1="19" x2="12" y2="23"></line>
+        <line x1="8" y1="23" x2="16" y2="23"></line>
+      </svg>
+    </div>
+    
+    <h1>Enable Microphone</h1>
+    <p>To record audio with your screen recordings, please allow microphone access when Chrome prompts you.</p>
+    
+    <button id="enable-btn" class="btn btn-primary">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+      </svg>
+      Enable Microphone
+    </button>
+    
+    <div id="status" class="status"></div>
+    
+    <!-- Device Selection (shown after permission granted) -->
+    <div id="device-select-container" class="device-select-container">
+      <label for="mic-device-select">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+        </svg>
+        Select Microphone
+      </label>
+      <select id="mic-device-select" class="device-select">
+        <option value="">Default Microphone</option>
+      </select>
+    </div>
+    
+    <div id="close-timer" class="close-timer"></div>
+    
+    <div class="instructions" id="instructions" style="display: none;">
+      <h3>💡 If permission was blocked:</h3>
+      <ol>
+        <li>Click the <strong>lock/tune icon</strong> in Chrome's address bar</li>
+        <li>Find <strong>"Microphone"</strong> and set it to <strong>"Allow"</strong></li>
+        <li>Click the button above again</li>
+      </ol>
+    </div>
+    
+    <button id="skip-btn" class="btn btn-secondary">Skip for now (no audio)</button>
+  </div>
+
+  <script src="mic-permission.js"></script>
+</body>
+</html>

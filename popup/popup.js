@@ -34,8 +34,11 @@ const countdownNumber = document.getElementById('countdown-number');
 
 // Mode selection elements
 const modeOptions = document.querySelectorAll('.mode-option');
+const audioDeviceSelect = document.getElementById('audio-device-select');
+const micPermissionInfo = document.getElementById('mic-permission-info');
 
 let currentUploadLink = null;
+let selectedAudioDeviceId = ''; // Track selected audio device
 
 // Check authentication status on load
 async function init() {
@@ -56,6 +59,161 @@ async function init() {
 
   hideStatus();
   setupModeSelection();
+  // Try to populate audio devices if permission was previously granted
+  tryPopulateAudioDevices();
+}
+
+// Request microphone permission by opening helper page (avoids popup focus issues)
+async function requestMicrophonePermission() {
+  // First, check if we already have permission
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const audioInputs = devices.filter(device => device.kind === 'audioinput');
+  const hasLabels = audioInputs.some(device => device.label);
+  
+  if (hasLabels) {
+    // Already have permission
+    await populateAudioDevices();
+    return { success: true };
+  }
+  
+  // Open the helper page in a new tab - this avoids the popup closing issue
+  chrome.tabs.create({
+    url: chrome.runtime.getURL('popup/mic-permission.html'),
+    active: true
+  });
+  
+  // Return a pending state - the actual permission will be granted in the new tab
+  return { 
+    success: false, 
+    pending: true, 
+    message: 'Microphone permission page opened. Please grant permission in the new tab.' 
+  };
+}
+
+// Try to populate audio devices without requesting permission (if already granted)
+async function tryPopulateAudioDevices() {
+  try {
+    // Check if we can enumerate devices (this works if permission was previously granted)
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const audioInputs = devices.filter(device => device.kind === 'audioinput');
+    
+    // If we have devices with labels, permission was granted before
+    if (audioInputs.length > 0 && audioInputs.some(device => device.label)) {
+      await populateAudioDevices();
+      // Update storage to reflect that permission is granted
+      await chrome.storage.local.set({ micPermissionGranted: true });
+    } else {
+      // Check storage for permission status (may have been set by helper page)
+      const stored = await chrome.storage.local.get(['micPermissionGranted']);
+      if (stored.micPermissionGranted === true) {
+        // Permission was granted via helper page, try to populate devices
+        await populateAudioDevices();
+      } else {
+        // Permission not granted yet - add a button to request it
+        addPermissionRequestButton();
+      }
+    }
+  } catch (err) {
+    console.warn('Error checking audio devices:', err);
+    addPermissionRequestButton();
+  }
+}
+
+// Setup audio device selector - called after microphone permission is granted
+async function populateAudioDevices() {
+  try {
+    // Enumerate all audio devices (permission already granted from getUserMedia)
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const audioInputs = devices.filter(device => device.kind === 'audioinput');
+    
+    console.log('Found audio devices:', audioInputs.length);
+    
+    // Clear existing options except default
+    audioDeviceSelect.innerHTML = '<option value="">Default Microphone</option>';
+    
+    // Add each audio device as an option
+    audioInputs.forEach((device, index) => {
+      const option = document.createElement('option');
+      option.value = device.deviceId;
+      // If label is empty, it means permission wasn't granted yet
+      option.text = device.label || `Microphone ${index + 1}`;
+      audioDeviceSelect.appendChild(option);
+    });
+    
+    // Remove permission request button if it exists
+    const permissionBtn = document.getElementById('request-mic-permission-btn');
+    if (permissionBtn) {
+      permissionBtn.remove();
+    }
+    
+    // Set event listener for device selection
+    audioDeviceSelect.removeEventListener('change', handleAudioDeviceChange);
+    audioDeviceSelect.addEventListener('change', handleAudioDeviceChange);
+    
+    // Load saved device preference
+    chrome.storage.local.get(['selectedAudioDevice'], (result) => {
+      if (result.selectedAudioDevice) {
+        audioDeviceSelect.value = result.selectedAudioDevice;
+        selectedAudioDeviceId = result.selectedAudioDevice;
+      }
+    });
+  } catch (err) {
+    console.warn('Error enumerating audio devices:', err);
+    // This is optional - continue if enumeration fails
+  }
+}
+
+// Add a button to request microphone permission (opens in new tab to avoid popup focus issues)
+function addPermissionRequestButton() {
+  // Check if button already exists
+  if (document.getElementById('request-mic-permission-btn')) {
+    return;
+  }
+  
+  const audioSettings = document.querySelector('.audio-settings');
+  if (!audioSettings) return;
+  
+  const permissionBtn = document.createElement('button');
+  permissionBtn.id = 'request-mic-permission-btn';
+  permissionBtn.className = 'btn btn-secondary';
+  permissionBtn.style.cssText = 'margin-top: 8px; width: 100%; font-size: 12px; padding: 8px;';
+  permissionBtn.innerHTML = '🔊 Enable Microphone Access';
+  permissionBtn.onclick = async () => {
+    // Open the microphone permission page in a new tab
+    // This avoids the popup closing when the permission dialog appears
+    chrome.tabs.create({
+      url: chrome.runtime.getURL('popup/mic-permission.html'),
+      active: true
+    });
+  };
+  
+  audioSettings.appendChild(permissionBtn);
+}
+
+// Listen for storage changes to detect when permission is granted from the helper page
+chrome.storage.onChanged.addListener((changes, namespace) => {
+  if (namespace === 'local' && changes.micPermissionGranted) {
+    if (changes.micPermissionGranted.newValue === true) {
+      console.log('Microphone permission granted via helper page');
+      // Refresh audio devices and UI
+      populateAudioDevices();
+      // Remove the permission button if it exists
+      const permissionBtn = document.getElementById('request-mic-permission-btn');
+      if (permissionBtn) {
+        permissionBtn.textContent = '✓ Microphone enabled';
+        setTimeout(() => permissionBtn.remove(), 2000);
+      }
+      hideStatus();
+    }
+  }
+});
+
+// Handle audio device selection change
+function handleAudioDeviceChange(e) {
+  selectedAudioDeviceId = e.target.value;
+  console.log('Selected audio device:', selectedAudioDeviceId);
+  // Save preference
+  chrome.storage.local.set({ selectedAudioDevice: selectedAudioDeviceId });
 }
 
 // Setup mode selection handlers
@@ -90,6 +248,37 @@ function setupModeSelection() {
       document.getElementById('mode-screen-camera').classList.add('active');
     }
   });
+
+  // Add focus handler to audio device selector to check/request permission if needed
+  if (audioDeviceSelect) {
+    let permissionChecked = false;
+    audioDeviceSelect.addEventListener('focus', async () => {
+      // Only check once per session
+      if (permissionChecked) return;
+      permissionChecked = true;
+      
+      // Check if we have permission by trying to enumerate devices
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const audioInputs = devices.filter(device => device.kind === 'audioinput');
+        // If no devices have labels, permission wasn't granted
+        if (audioInputs.length === 0 || !audioInputs.some(device => device.label)) {
+          // Permission not granted - show button if not already shown
+          if (!document.getElementById('request-mic-permission-btn')) {
+            addPermissionRequestButton();
+          }
+        } else {
+          // Permission granted - populate devices
+          await populateAudioDevices();
+        }
+      } catch (err) {
+        // On error, show permission button
+        if (!document.getElementById('request-mic-permission-btn')) {
+          addPermissionRequestButton();
+        }
+      }
+    });
+  }
 }
 
 // Show authenticated UI
@@ -99,6 +288,11 @@ function showAuthenticated() {
   recordingActiveSection.classList.add('hidden');
   uploadSection.classList.add('hidden');
   uploadCompleteSection.classList.add('hidden');
+  
+  // Show microphone permission tip
+  if (micPermissionInfo) {
+    micPermissionInfo.style.display = 'block';
+  }
 }
 
 // Show unauthenticated UI
@@ -158,7 +352,61 @@ startBtn.addEventListener('click', async () => {
       return;
     }
 
-    // Request screen capture first (THIS WILL WORK - popup has user gesture!)
+    // Check and request microphone permission BEFORE screen capture
+    // This gives the user a clear opportunity to grant permission without rushing
+    console.log('Popup: [MIC CHECK] Starting microphone permission check...');
+    let hasMicPermission = false;
+    
+    try {
+      // Try to enumerate devices - if we get labels, permission was granted
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const audioInputs = devices.filter(device => device.kind === 'audioinput');
+      console.log('Popup: [MIC CHECK] Found', audioInputs.length, 'audio input devices');
+      
+      // Check if any device has a label (indicates permission was granted)
+      const hasLabels = audioInputs.some(device => device.label && device.label.trim() !== '');
+      hasMicPermission = audioInputs.length > 0 && hasLabels;
+      
+      console.log('Popup: [MIC CHECK] Has microphone permission:', hasMicPermission);
+      if (audioInputs.length > 0) {
+        const labels = audioInputs.map(d => d.label || '(no label)');
+        console.log('Popup: [MIC CHECK] Device labels:', labels);
+        console.log('Popup: [MIC CHECK] Has any labels:', hasLabels);
+      }
+    } catch (err) {
+      console.error('Popup: [MIC CHECK] Could not enumerate devices:', err);
+      hasMicPermission = false; // Assume no permission on error
+    }
+
+    // Also check storage for permission status (set by mic-permission.html helper page)
+    if (!hasMicPermission) {
+      const stored = await chrome.storage.local.get(['micPermissionGranted']);
+      if (stored.micPermissionGranted === true) {
+        console.log('Popup: [MIC CHECK] Permission granted via helper page (from storage)');
+        hasMicPermission = true;
+      }
+    }
+
+    // If no permission, prompt user to enable it via the button (don't request inline - popup will close!)
+    if (!hasMicPermission) {
+      console.log('Popup: [MIC REQUEST] No microphone permission detected');
+      showStatus('⚠️ Microphone not enabled. Click "Enable Microphone Access" above, or recording will continue without audio.', 'warning');
+      
+      // Add the permission button if not already shown
+      if (!document.getElementById('request-mic-permission-btn')) {
+        addPermissionRequestButton();
+      }
+      
+      // Wait a moment for user to see the message
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      hideStatus();
+    } else {
+      console.log('Popup: [MIC CHECK] Microphone permission already granted, skipping request');
+    }
+    
+    console.log('Popup: [MIC FINAL] Final permission status:', hasMicPermission);
+
+    // Request screen capture (THIS WILL WORK - popup has user gesture!)
     console.log('Popup: Requesting screen capture...');
     try {
       screenStream = await navigator.mediaDevices.getDisplayMedia({
@@ -177,19 +425,69 @@ startBtn.addEventListener('click', async () => {
       return;
     }
 
-    // Request microphone (optional)
-    console.log('Popup: Requesting microphone...');
-    try {
-      micStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
+    // Get microphone stream (only if permission was granted earlier)
+    console.log('Popup: Getting microphone stream...');
+    if (hasMicPermission) {
+      try {
+        const audioConstraints = {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true
+        };
+        
+        // If a specific device is selected, try to use it (but fallback to default if unavailable)
+        if (selectedAudioDeviceId) {
+          // First try with exact device
+          try {
+            audioConstraints.deviceId = { exact: selectedAudioDeviceId };
+            micStream = await navigator.mediaDevices.getUserMedia({
+              audio: audioConstraints
+            });
+            console.log('Popup: Microphone obtained successfully with selected device');
+          } catch (exactErr) {
+            // If exact device fails, try with ideal (fallback)
+            console.warn('Popup: Selected device unavailable, trying fallback...');
+            audioConstraints.deviceId = { ideal: selectedAudioDeviceId };
+            micStream = await navigator.mediaDevices.getUserMedia({
+              audio: audioConstraints
+            });
+            console.log('Popup: Microphone obtained with fallback device');
+          }
+        } else {
+          // No specific device selected, use default
+          micStream = await navigator.mediaDevices.getUserMedia({
+            audio: audioConstraints
+          });
+          console.log('Popup: Microphone obtained successfully (default device)');
         }
-      });
-      console.log('Popup: Microphone obtained');
-    } catch (err) {
-      console.warn('Popup: Microphone denied, continuing without it');
+      } catch (err) {
+        console.warn('Popup: Failed to get microphone stream:', err.name, err.message);
+        // If we had permission but can't get stream, it might be device-specific issue
+        if (err.name === 'NotFoundError') {
+          showStatus('No microphone found. Recording without audio.', 'warning');
+        } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+          showStatus('Microphone is in use by another app. Recording without audio.', 'warning');
+        } else if (err.name === 'OverconstrainedError') {
+          // Try with default device
+          try {
+            micStream = await navigator.mediaDevices.getUserMedia({
+              audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+              }
+            });
+            console.log('Popup: Microphone obtained with default device after fallback');
+          } catch (fallbackErr) {
+            console.warn('Popup: Fallback to default also failed:', fallbackErr);
+            micStream = null;
+          }
+        } else {
+          micStream = null;
+        }
+      }
+    } else {
+      console.log('Popup: Skipping microphone (permission not granted)');
       micStream = null;
     }
 
@@ -213,6 +511,8 @@ startBtn.addEventListener('click', async () => {
     await startCountdown();
 
     // Inject content script for overlay (after countdown)
+    // Note: This may fail on some pages (e.g., Chrome Web Store) but recording will still work
+    let overlayInjected = false;
     try {
       await chrome.scripting.executeScript({
         target: { tabId: recordingTabId },
@@ -222,18 +522,23 @@ startBtn.addEventListener('click', async () => {
         target: { tabId: recordingTabId },
         files: ['content/overlay.css']
       });
+      overlayInjected = true;
+      console.log('Popup: Overlay injected successfully');
     } catch (e) {
-      console.log('Script injection:', e);
+      console.warn('Popup: Could not inject overlay (this is OK, recording will still work):', e.message);
+      // Recording will continue without the overlay - this is fine for restricted pages
     }
 
-    // Show overlay
-    try {
-      await chrome.tabs.sendMessage(recordingTabId, {
-        type: 'SHOW_OVERLAY',
-        mode: selectedMode
-      });
-    } catch (e) {
-      console.log('Overlay message:', e);
+    // Show overlay if injection was successful
+    if (overlayInjected) {
+      try {
+        await chrome.tabs.sendMessage(recordingTabId, {
+          type: 'SHOW_OVERLAY',
+          mode: selectedMode
+        });
+      } catch (e) {
+        console.log('Popup: Overlay message error:', e.message);
+      }
     }
 
     // Start MediaRecorder
@@ -349,21 +654,43 @@ async function startCountdown() {
   return new Promise((resolve) => {
     let count = 3;
     
+    // Ensure countdown number element exists
+    if (!countdownNumber) {
+      console.error('Countdown element not found!');
+      resolve();
+      return;
+    }
+    
+    console.log('Popup: Starting countdown...');
+    
     const updateCountdown = () => {
-      if (countdownNumber) {
-        countdownNumber.textContent = count;
-      }
+      console.log('Popup: Countdown:', count);
+      countdownNumber.textContent = count;
+      
+      // Add a pulse animation class
+      countdownNumber.style.transform = 'scale(1.2)';
+      setTimeout(() => {
+        countdownNumber.style.transform = 'scale(1)';
+      }, 200);
       
       count--;
       
       if (count < 0) {
-        resolve();
+        // Show "Go!" briefly before resolving
+        countdownNumber.textContent = 'GO!';
+        countdownNumber.style.fontSize = '40px';
+        console.log('Popup: Countdown complete!');
+        setTimeout(() => {
+          countdownNumber.style.fontSize = '';
+          resolve();
+        }, 500);
       } else {
         setTimeout(updateCountdown, 1000);
       }
     };
     
-    updateCountdown();
+    // Small delay before starting to ensure UI is ready
+    setTimeout(updateCountdown, 100);
   });
 }
 
