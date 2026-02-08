@@ -70,50 +70,9 @@ async function uploadToDrive(blob, token, progressCallback = null) {
     parents: [folderInfo.id] // Upload to the specific folder
   };
 
-  const fileSizeMB = blob.size / 1024 / 1024;
-
   // Use resumable upload for ALL files (more robust)
-  if (true || fileSizeMB > 5) {
-    if (progressCallback) progressCallback(30);
-    return await uploadResumable(blob, metadata, token, progressCallback, folderInfo.link);
-  }
-
   if (progressCallback) progressCallback(30);
-
-  // 1. Multipart upload (Simplest for files < 5MB)
-  const form = new FormData();
-  form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-  form.append('file', blob);
-
-  const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink', {
-    method: 'POST',
-    headers: new Headers({ 'Authorization': 'Bearer ' + token }),
-    body: form
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error?.message || 'Upload failed');
-  }
-
-  const data = await response.json();
-
-  // 2. Make Public
-  await fetch(`https://www.googleapis.com/drive/v3/files/${data.id}/permissions`, {
-    method: 'POST',
-    headers: {
-      'Authorization': 'Bearer ' + token,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ role: 'reader', type: 'anyone' })
-  });
-
-  // Return comprehensive info
-  return {
-    fileId: data.id,
-    webViewLink: data.webViewLink,
-    folderLink: folderInfo.link
-  };
+  return await uploadResumable(blob, metadata, token, progressCallback, folderInfo.link);
 }
 
 // Resumable upload for larger files (>5MB)
@@ -151,8 +110,11 @@ async function uploadResumable(blob, metadata, token, progressCallback = null, f
   const uploadResponse = await fetch(uploadUrl, {
     method: 'PUT',
     headers: {
-      'Content-Type': blob.type || 'video/webm',
-      // Explicitly set content length to be safe
+      // Content-Type should NOT be set here for PUT in resumable upload if it was set in init via X-Upload-Content-Type
+      // But some docs say to set it. However, the critical part is NOT setting it to application/json
+      // Google Drive API expects strictly the file content.
+      // We will set it to the file type just in case, but keep it clean.
+      // 'Content-Type': blob.type || 'video/webm',
       'Content-Length': uint8Array.length.toString()
     },
     body: uint8Array
@@ -184,4 +146,3 @@ async function uploadResumable(blob, metadata, token, progressCallback = null, f
     folderLink: folderLink
   };
 }
-

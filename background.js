@@ -160,17 +160,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
       activeTransfers.delete(transferId); // Cleanup
 
-      // Start upload
-      handleVideoUpload(fullBase64, blobSize, mimeType)
-        .then((result) => {
-          // Notify popup of success via sendMessage or similar mechanism if possible
-          // (Since response port is closed, we rely on broadcast)
-          chrome.runtime.sendMessage({
-            type: 'RECORDING_STOPPED',
-            link: result.link,
-            folderLink: result.folderLink,
-            toPopup: true
-          }).catch(() => { });
+      // Convert base64 to Blob
+      console.log('Background: Converting chunked base64 to blob...');
+      fetch(fullBase64)
+        .then(res => res.blob())
+        .then(blob => {
+          // Start upload
+          handleVideoUpload(blob, blobSize, mimeType, null) // Thumbnail is null for popup recordings for now
+            .then((result) => {
+              // Notify popup of success via sendMessage or similar mechanism if possible
+              // (Since response port is closed, we rely on broadcast)
+              chrome.runtime.sendMessage({
+                type: 'RECORDING_STOPPED',
+                link: result.link,
+                folderLink: result.folderLink,
+                toPopup: true
+              }).catch(() => { });
+            });
+        })
+        .catch(err => {
+          console.error('Background: Error converting chunks to blob:', err);
         });
     }
 
@@ -291,8 +300,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'VIDEO_BLOB') {
     console.log('Background: Received VIDEO_BLOB, size:', request.blobSize);
     console.log('Background: Starting video upload...');
+
+    // Reconstruct Blob from ArrayBuffer
+    const blob = new Blob([request.arrayBuffer], { type: request.mimeType });
+
     // Don't await here to keep listener responsive
-    handleVideoUpload(request.base64Data, request.blobSize, request.mimeType)
+    handleVideoUpload(blob, request.blobSize, request.mimeType, request.thumbnail)
       .then((result) => {
         console.log('Background: Upload successful, result:', result);
         sendResponse({ success: true, link: result.link });
@@ -353,7 +366,7 @@ function sendProgressUpdate(percent, status) {
 }
 
 // Handle video upload
-async function handleVideoUpload(base64Data, blobSize, mimeType) {
+async function handleVideoUpload(blob, blobSize, mimeType, thumbnail) {
   const recordingId = `rec_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
   try {
@@ -377,20 +390,8 @@ async function handleVideoUpload(base64Data, blobSize, mimeType) {
     }
     console.log('Background: Auth token obtained');
 
-    // Convert Base64 to Blob
-    console.log('Background: Converting base64 to blob...');
-
-    if (!base64Data || !base64Data.startsWith('data:')) {
-      throw new Error('Received empty or invalid base64 data');
-    }
-
-    sendProgressUpdate(30, 'Processing video...');
-    const res = await fetch(base64Data);
-    const blob = await res.blob();
-
-    // Skip thumbnail - service workers don't have DOM access
-    console.log('Background: Skipping thumbnail (no DOM in service worker)');
-    const thumbnail = null;
+    // Use provided blob directly (no base64 conversion needed anymore)
+    console.log('Background: Using provided blob directly');
 
     // Log upload info
     const sizeMB = (blobSize / 1024 / 1024).toFixed(2);
@@ -423,7 +424,7 @@ async function handleVideoUpload(base64Data, blobSize, mimeType) {
       driveFileId: fileId,
       folderLink: folderLink,
       title: `Screen Recording ${new Date().toLocaleString()}`,
-      thumbnail: thumbnail,
+      thumbnail: thumbnail, // Use provided thumbnail
       duration: 0, // Could calculate from video if needed
       size: blobSize,
       mode: 'screen-camera', // Will be updated to use actual mode

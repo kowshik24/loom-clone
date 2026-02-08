@@ -12,6 +12,7 @@ let micStream = null;
 let mergedStream = null;
 let mediaRecorder = null;
 let recordedChunks = [];
+let audioContext = null; // Track audio context for proper cleanup
 
 // DOM elements
 const authSection = document.getElementById('auth-section');
@@ -330,11 +331,37 @@ connectBtn.addEventListener('click', async () => {
 
 // Handle start recording button - NEW POPUP-BASED RECORDING
 startBtn.addEventListener('click', async () => {
+  console.log('Popup: Start button clicked');
+  
+  // Guard against starting a new recording if one is already in progress
+  if (isRecording) {
+    console.log('Popup: Recording already in progress, ignoring start request');
+    showStatus('Recording already in progress', 'warning');
+    return;
+  }
+  
   startBtn.disabled = true;
   showStatus('Starting recording...', 'info');
 
   try {
     console.log('Popup: Starting recording from popup');
+    
+    // Clean up any previous recording state first
+    console.log('Popup: Running cleanup before new recording...');
+    cleanup();
+    
+    // Wait a moment for cleanup to complete and resources to release
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    // Reset state variables to ensure clean start
+    screenStream = null;
+    micStream = null;
+    mergedStream = null;
+    audioContext = null;
+    mediaRecorder = null;
+    recordedChunks = [];
+    
+    console.log('Popup: Cleanup complete, initializing new recording...');
 
     // Get current active tab for overlay
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -409,18 +436,60 @@ startBtn.addEventListener('click', async () => {
     // Request screen capture (THIS WILL WORK - popup has user gesture!)
     console.log('Popup: Requesting screen capture...');
     try {
-      screenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: {
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-          frameRate: { ideal: 30 }
-        },
-        audio: true // Try to get system audio
-      });
+      // First try with preferred constraints
+      try {
+        screenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+            frameRate: { ideal: 30 }
+          },
+          audio: true // Try to get system audio
+        });
+      } catch (constraintErr) {
+        // If constraints fail, try with minimal options
+        console.warn('Popup: Constraints failed, trying minimal options:', constraintErr.name, constraintErr.message);
+        screenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+          audio: false
+        });
+      }
       console.log('Popup: Screen stream obtained!');
+      
+      // Log stream details
+      const videoTracks = screenStream.getVideoTracks();
+      const audioTracks = screenStream.getAudioTracks();
+      console.log('Popup: Stream details - video tracks:', videoTracks.length, 'audio tracks:', audioTracks.length);
+      if (videoTracks[0]) {
+        console.log('Popup: Video track state:', videoTracks[0].readyState, 'label:', videoTracks[0].label);
+        // Add ended listener early
+        videoTracks[0].addEventListener('ended', () => {
+          console.log('Popup: VIDEO TRACK ENDED EVENT FIRED!');
+        });
+      }
     } catch (err) {
-      console.error('Popup: getDisplayMedia error:', err);
-      showStatus('Screen sharing cancelled or failed', 'error');
+      console.error('Popup: getDisplayMedia error:', err.name, err.message, err);
+      
+      let errorMessage = 'Screen sharing failed';
+      if (err.name === 'NotAllowedError') {
+        if (err.message?.includes('cancelled') || err.message?.includes('denied')) {
+          errorMessage = 'Screen sharing was cancelled. Please click Start and select a screen/window to share.';
+        } else {
+          errorMessage = 'Screen sharing permission denied. Please allow screen sharing when prompted.';
+        }
+      } else if (err.name === 'NotFoundError') {
+        errorMessage = 'No screen or window available to share.';
+      } else if (err.name === 'NotReadableError') {
+        errorMessage = 'Could not access the selected screen. It may be in use.';
+      } else if (err.name === 'AbortError') {
+        errorMessage = 'Screen sharing was aborted. Please try again.';
+      } else if (err.name === 'InvalidStateError') {
+        errorMessage = 'Another screen share is already active. Please stop it first.';
+      } else {
+        errorMessage = `Screen sharing failed: ${err.name || 'Unknown error'}`;
+      }
+      
+      showStatus(errorMessage, 'error');
       startBtn.disabled = false;
       return;
     }
@@ -493,22 +562,64 @@ startBtn.addEventListener('click', async () => {
 
     // Merge streams
     console.log('Popup: Merging streams...');
+    
+    // Check video track state before merging
+    const preCheckTrack = screenStream.getVideoTracks()[0];
+    console.log('Popup: Pre-merge video track state:', preCheckTrack?.readyState);
+    if (preCheckTrack?.readyState !== 'live') {
+      console.error('Popup: Video track is not live before merging!');
+      showStatus('Screen share ended before recording could start. Please try again.', 'error');
+      cleanup();
+      resetToReadyState();
+      return;
+    }
+    
     if (micStream) {
       mergedStream = await mergeAudioStreams(screenStream, micStream);
     } else {
       mergedStream = screenStream;
     }
+    
+    // Check video track state after merging
+    const postCheckTrack = mergedStream.getVideoTracks()[0];
+    console.log('Popup: Post-merge video track state:', postCheckTrack?.readyState);
 
     // Show countdown before starting recording
     hideStatus();
     recordingSection.classList.add('hidden');
+    
+    // Ensure countdown section is visible
+    console.log('Popup: Showing countdown section...');
     countdownSection.classList.remove('hidden');
+    
+    // Force a reflow to ensure the section is rendered
+    void countdownSection.offsetHeight;
 
     // Store the tab ID for overlay injection
     const recordingTabId = tab.id;
 
     // Start countdown
+    console.log('Popup: Starting countdown animation...');
+    
+    // Check video track state before countdown
+    const preCountdownTrack = mergedStream.getVideoTracks()[0];
+    console.log('Popup: Pre-countdown video track state:', preCountdownTrack?.readyState);
+    
     await startCountdown();
+    
+    // Check video track state after countdown
+    const postCountdownTrack = mergedStream.getVideoTracks()[0];
+    console.log('Popup: Post-countdown video track state:', postCountdownTrack?.readyState);
+    
+    if (postCountdownTrack?.readyState !== 'live') {
+      console.error('Popup: Video track ended during countdown!');
+      showStatus('Screen share ended during countdown. Please try again and keep the shared window visible.', 'error');
+      cleanup();
+      resetToReadyState();
+      return;
+    }
+    
+    console.log('Popup: Countdown finished!');
 
     // Inject content script for overlay (after countdown)
     // Note: This may fail on some pages (e.g., Chrome Web Store) but recording will still work
@@ -558,10 +669,41 @@ startBtn.addEventListener('click', async () => {
     console.error('Start recording error:', error);
     showStatus('Failed to start recording: ' + error.message, 'error');
     cleanup();
+    // Reset UI to ready state
+    resetToReadyState();
   } finally {
     startBtn.disabled = false;
   }
 });
+
+// Reset UI to ready state
+function resetToReadyState() {
+  console.log('Popup: Resetting to ready state');
+  
+  // Hide all sections first
+  countdownSection.classList.add('hidden');
+  recordingActiveSection.classList.add('hidden');
+  uploadSection.classList.add('hidden');
+  uploadCompleteSection.classList.add('hidden');
+  
+  // Show recording section
+  recordingSection.classList.remove('hidden');
+  
+  // Enable start button
+  startBtn.disabled = false;
+  
+  // Reset countdown display
+  if (countdownNumber) {
+    countdownNumber.textContent = '3';
+    countdownNumber.style.fontSize = '';
+    countdownNumber.style.transform = '';
+  }
+  
+  // Reset timer display
+  if (recordingTimer) {
+    recordingTimer.textContent = '00:00';
+  }
+}
 
 // Handle stop recording - called when overlay requests stop
 async function stopRecording() {
@@ -654,34 +796,43 @@ async function startCountdown() {
   return new Promise((resolve) => {
     let count = 3;
     
+    // Re-fetch countdown element in case DOM changed
+    const countdownEl = document.getElementById('countdown-number');
+    
     // Ensure countdown number element exists
-    if (!countdownNumber) {
-      console.error('Countdown element not found!');
+    if (!countdownEl) {
+      console.error('Popup: Countdown element not found!');
       resolve();
       return;
     }
     
-    console.log('Popup: Starting countdown...');
+    // Reset countdown display
+    countdownEl.textContent = '3';
+    countdownEl.style.fontSize = '';  // Reset any previous font size changes
+    countdownEl.style.transform = '';
+    countdownEl.style.opacity = '1'; // Ensure visible
+    
+    console.log('Popup: Starting countdown... Element found:', !!countdownEl);
     
     const updateCountdown = () => {
       console.log('Popup: Countdown:', count);
-      countdownNumber.textContent = count;
+      countdownEl.textContent = count;
       
       // Add a pulse animation class
-      countdownNumber.style.transform = 'scale(1.2)';
+      countdownEl.style.transform = 'scale(1.2)';
       setTimeout(() => {
-        countdownNumber.style.transform = 'scale(1)';
+        if (countdownEl) countdownEl.style.transform = 'scale(1)';
       }, 200);
       
       count--;
       
       if (count < 0) {
         // Show "Go!" briefly before resolving
-        countdownNumber.textContent = 'GO!';
-        countdownNumber.style.fontSize = '40px';
+        countdownEl.textContent = 'GO!';
+        countdownEl.style.fontSize = '40px';
         console.log('Popup: Countdown complete!');
         setTimeout(() => {
-          countdownNumber.style.fontSize = '';
+          if (countdownEl) countdownEl.style.fontSize = '';
           resolve();
         }, 500);
       } else {
@@ -690,6 +841,7 @@ async function startCountdown() {
     };
     
     // Small delay before starting to ensure UI is ready
+    console.log('Popup: Initiating countdown in 100ms...');
     setTimeout(updateCountdown, 100);
   });
 }
@@ -804,7 +956,16 @@ function showExtensionId() {
 
 // Merge audio streams
 async function mergeAudioStreams(screenStream, micStream) {
-  const audioContext = new AudioContext();
+  // Close any existing audio context first
+  if (audioContext) {
+    try {
+      await audioContext.close();
+    } catch (e) {
+      console.log('Popup: Error closing previous audioContext:', e);
+    }
+  }
+  
+  audioContext = new AudioContext();
   const destination = audioContext.createMediaStreamDestination();
 
   // Add screen audio if available
@@ -841,6 +1002,30 @@ async function mergeAudioStreams(screenStream, micStream) {
 
 // Start MediaRecorder
 function startMediaRecorder() {
+  console.log('Popup: Starting MediaRecorder setup...');
+  
+  // Safety check - ensure we have a valid stream
+  if (!mergedStream) {
+    console.error('Popup: No merged stream available for recording!');
+    showStatus('Recording failed - no stream available', 'error');
+    isRecording = false;
+    resetToReadyState();
+    return;
+  }
+  
+  // Check if the stream has active video tracks
+  const videoTracks = mergedStream.getVideoTracks();
+  if (videoTracks.length === 0 || videoTracks[0].readyState !== 'live') {
+    console.error('Popup: Video track not available or not live!', videoTracks);
+    showStatus('Recording failed - video stream ended', 'error');
+    isRecording = false;
+    resetToReadyState();
+    cleanup();
+    return;
+  }
+  
+  console.log('Popup: Stream valid, video tracks:', videoTracks.length, 'state:', videoTracks[0].readyState);
+  
   recordedChunks = [];
 
   // Prioritize MP4 (best for Drive), then VP8 (best compatibility), then default
@@ -852,41 +1037,57 @@ function startMediaRecorder() {
     mimeType = 'video/webm'; // Fallback to browser default if VP8 explicit fails
   }
 
+  console.log('Popup: Using mimeType:', mimeType);
+
   const options = {
     mimeType: mimeType,
     videoBitsPerSecond: 2500000
   };
 
-  mediaRecorder = new MediaRecorder(mergedStream, options);
+  try {
+    mediaRecorder = new MediaRecorder(mergedStream, options);
+    console.log('Popup: MediaRecorder created successfully');
 
-  mediaRecorder.ondataavailable = (event) => {
-    if (event.data && event.data.size > 0) {
-      recordedChunks.push(event.data);
-      console.log('Popup: Chunk recorded, total chunks:', recordedChunks.length);
-    }
-  };
-
-  mediaRecorder.onstop = async () => {
-    console.log('Popup: MediaRecorder stopped');
-    await handleRecordingStop();
-  };
-
-  mediaRecorder.onerror = (event) => {
-    console.error('Popup: MediaRecorder error:', event);
-  };
-
-  // Handle user stopping screen share
-  if (screenStream) {
-    screenStream.getVideoTracks()[0].onended = () => {
-      console.log('Popup: Screen sharing stopped by user');
-      if (isRecording) {
-        stopRecording();
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data && event.data.size > 0) {
+        recordedChunks.push(event.data);
+        console.log('Popup: Chunk recorded, total chunks:', recordedChunks.length);
       }
     };
-  }
 
-  mediaRecorder.start(1000); // Collect data every second
-  console.log('Popup: MediaRecorder started');
+    mediaRecorder.onstop = async () => {
+      console.log('Popup: MediaRecorder stopped');
+      await handleRecordingStop();
+    };
+
+    mediaRecorder.onerror = (event) => {
+      console.error('Popup: MediaRecorder error:', event);
+      showStatus('Recording error: ' + (event.error?.message || 'Unknown error'), 'error');
+    };
+
+    // Handle user stopping screen share
+    if (screenStream) {
+      const videoTrack = screenStream.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.onended = () => {
+          console.log('Popup: Screen sharing stopped by user');
+          if (isRecording) {
+            stopRecording();
+          }
+        };
+      }
+    }
+
+    mediaRecorder.start(1000); // Collect data every second
+    console.log('Popup: MediaRecorder started successfully!');
+    
+  } catch (error) {
+    console.error('Popup: Failed to create/start MediaRecorder:', error);
+    showStatus('Recording failed: ' + error.message, 'error');
+    isRecording = false;
+    resetToReadyState();
+    cleanup();
+  }
 }
 
 // Handle recording stop
@@ -975,19 +1176,57 @@ async function handleRecordingStop() {
 function cleanup() {
   console.log('Popup: Cleaning up resources');
 
+  // Stop keep-alive first
+  stopKeepAlive();
+  
+  // Stop recording timer
+  stopRecordingTimer();
+
   if (screenStream) {
-    screenStream.getTracks().forEach(track => track.stop());
+    try {
+      screenStream.getTracks().forEach(track => {
+        track.stop();
+        console.log('Popup: Stopped screen track:', track.kind);
+      });
+    } catch (e) {
+      console.log('Popup: Error stopping screenStream:', e);
+    }
     screenStream = null;
   }
 
   if (micStream) {
-    micStream.getTracks().forEach(track => track.stop());
+    try {
+      micStream.getTracks().forEach(track => {
+        track.stop();
+        console.log('Popup: Stopped mic track:', track.kind);
+      });
+    } catch (e) {
+      console.log('Popup: Error stopping micStream:', e);
+    }
     micStream = null;
   }
 
   if (mergedStream) {
-    mergedStream.getTracks().forEach(track => track.stop());
+    try {
+      mergedStream.getTracks().forEach(track => {
+        track.stop();
+        console.log('Popup: Stopped merged track:', track.kind);
+      });
+    } catch (e) {
+      console.log('Popup: Error stopping mergedStream:', e);
+    }
     mergedStream = null;
+  }
+  
+  // Close audio context
+  if (audioContext) {
+    try {
+      audioContext.close();
+      console.log('Popup: Closed audioContext');
+    } catch (e) {
+      console.log('Popup: Error closing audioContext:', e);
+    }
+    audioContext = null;
   }
 
   if (mediaRecorder && mediaRecorder.state !== 'inactive') {
@@ -1000,6 +1239,7 @@ function cleanup() {
 
   mediaRecorder = null;
   recordedChunks = [];
+  isRecording = false;
 }
 
 // Keep popup window persistent during recording
@@ -1040,8 +1280,20 @@ function stopKeepAlive() {
   }
 }
 
+// Global error handler to catch unexpected issues
+window.onerror = function(message, source, lineno, colno, error) {
+  console.error('Popup: Global error:', message, 'at', source, lineno, colno);
+  console.error('Error object:', error);
+  return false;
+};
+
+window.onunhandledrejection = function(event) {
+  console.error('Popup: Unhandled promise rejection:', event.reason);
+};
+
 // Initialize on load
+console.log('Popup: Initializing...');
 init();
 showExtensionId();
-
 setupRecordingsUI(); // Initialize recordings history UI
+console.log('Popup: Initialization complete');

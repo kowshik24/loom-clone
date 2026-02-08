@@ -40,8 +40,43 @@ function setupRecordingsUI() {
 
     if (newRecordingBtn) {
         newRecordingBtn.addEventListener('click', () => {
-            uploadCompleteSection.classList.add('hidden');
-            recordingSection.classList.remove('hidden');
+            // Clean up any previous recording state
+            if (typeof cleanup === 'function') {
+                cleanup();
+            }
+            
+            // Use the resetToReadyState function if available
+            if (typeof resetToReadyState === 'function') {
+                resetToReadyState();
+            } else {
+                // Fallback: manually reset UI
+                const uploadCompleteSection = document.getElementById('upload-complete-section');
+                const uploadSection = document.getElementById('upload-section');
+                const recordingActiveSection = document.getElementById('recording-active-section');
+                const countdownSection = document.getElementById('countdown-section');
+                const recordingSection = document.getElementById('recording-section');
+                
+                uploadCompleteSection?.classList.add('hidden');
+                uploadSection?.classList.add('hidden');
+                recordingActiveSection?.classList.add('hidden');
+                countdownSection?.classList.add('hidden');
+                recordingSection?.classList.remove('hidden');
+                
+                const startBtn = document.getElementById('start-btn');
+                if (startBtn) {
+                    startBtn.disabled = false;
+                }
+            }
+            
+            // Hide any status messages
+            const statusDiv = document.getElementById('status');
+            if (statusDiv) {
+                statusDiv.classList.add('hidden');
+            }
+            
+            console.log('Ready for new recording');
+            
+            console.log('Ready for new recording');
         });
     }
 }

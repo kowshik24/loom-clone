@@ -308,6 +308,16 @@ async function handleRecordingStop() {
 
     console.log('Offscreen: Recording stopped, blob size:', blob.size, 'bytes =', (blob.size / 1024 / 1024).toFixed(2), 'MB');
 
+    // Generate thumbnail
+    console.log('Offscreen: Generating thumbnail...');
+    let thumbnail = null;
+    try {
+      thumbnail = await generateThumbnail(blob);
+      console.log('Offscreen: Thumbnail generated');
+    } catch (e) {
+      console.warn('Offscreen: Failed to generate thumbnail:', e);
+    }
+
     // Convert blob to ArrayBuffer for transfer
     console.log('Offscreen: Converting blob to ArrayBuffer...');
     const arrayBuffer = await blob.arrayBuffer();
@@ -328,7 +338,8 @@ async function handleRecordingStop() {
       type: 'VIDEO_BLOB',
       arrayBuffer: arrayBuffer,
       blobSize: blob.size,
-      mimeType: blob.type
+      mimeType: blob.type,
+      thumbnail: thumbnail
     }, (response) => {
       if (chrome.runtime.lastError) {
         console.error('Offscreen: Error sending video:', chrome.runtime.lastError);

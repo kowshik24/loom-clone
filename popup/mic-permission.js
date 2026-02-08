@@ -78,18 +78,55 @@ async function populateMicrophoneDevices() {
 if (micDeviceSelect) {
   micDeviceSelect.addEventListener('change', async (e) => {
     selectedDeviceId = e.target.value;
-    await chrome.storage.local.set({ selectedAudioDevice: selectedDeviceId });
     
-    // Test the selected microphone
+    // Save selection immediately  
+    try {
+      await chrome.storage.local.set({ selectedAudioDevice: selectedDeviceId });
+      showStatus('✓ Device selection saved!', 'success');
+    } catch (err) {
+      console.warn('Could not save device selection:', err);
+    }
+    
+    // Note: We don't test the microphone here anymore - it can cause Chrome issues
+    // The actual test will happen when recording starts
+  });
+}
+
+// Test microphone button (optional explicit test)
+const testMicBtn = document.getElementById('test-mic-btn');
+if (testMicBtn) {
+  testMicBtn.addEventListener('click', async () => {
+    testMicBtn.disabled = true;
+    testMicBtn.textContent = 'Testing...';
+    
     try {
       const constraints = {
         audio: selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : true
       };
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      
+      // Use a timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Timeout')), 5000);
+      });
+      
+      const stream = await Promise.race([
+        navigator.mediaDevices.getUserMedia(constraints),
+        timeoutPromise
+      ]);
+      
+      // Stop immediately
       stream.getTracks().forEach(track => track.stop());
-      showStatus('✓ Microphone selected and working!', 'success');
+      showStatus('✓ Microphone is working!', 'success');
     } catch (err) {
-      showStatus('⚠️ Could not access selected microphone. It may be in use.', 'info');
+      console.warn('Mic test error:', err);
+      if (err.message === 'Timeout') {
+        showStatus('⚠️ Microphone test timed out. Try a different device.', 'info');
+      } else {
+        showStatus('⚠️ Could not access microphone: ' + (err.message || err.name), 'info');
+      }
+    } finally {
+      testMicBtn.disabled = false;
+      testMicBtn.textContent = 'Test Microphone';
     }
   });
 }

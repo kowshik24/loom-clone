@@ -15,8 +15,15 @@ let timerInterval = null;
 
 // Create overlay with Shadow DOM
 function createOverlay() {
+  // Check if overlay already exists in DOM (handles script re-injection)
+  const existingOverlay = document.getElementById('loom-clone-overlay');
+  if (existingOverlay) {
+    console.log('Overlay: Found existing overlay in DOM, removing it first');
+    existingOverlay.remove();
+  }
+  
   if (overlayContainer) {
-    return; // Already exists
+    return; // Already exists in memory
   }
 
   // Create container
