@@ -40,8 +40,43 @@ function setupRecordingsUI() {
 
     if (newRecordingBtn) {
         newRecordingBtn.addEventListener('click', () => {
-            uploadCompleteSection.classList.add('hidden');
-            recordingSection.classList.remove('hidden');
+            // Clean up any previous recording state
+            if (typeof cleanup === 'function') {
+                cleanup();
+            }
+            
+            // Use the resetToReadyState function if available
+            if (typeof resetToReadyState === 'function') {
+                resetToReadyState();
+            } else {
+                // Fallback: manually reset UI
+                const uploadCompleteSection = document.getElementById('upload-complete-section');
+                const uploadSection = document.getElementById('upload-section');
+                const recordingActiveSection = document.getElementById('recording-active-section');
+                const countdownSection = document.getElementById('countdown-section');
+                const recordingSection = document.getElementById('recording-section');
+                
+                uploadCompleteSection?.classList.add('hidden');
+                uploadSection?.classList.add('hidden');
+                recordingActiveSection?.classList.add('hidden');
+                countdownSection?.classList.add('hidden');
+                recordingSection?.classList.remove('hidden');
+                
+                const startBtn = document.getElementById('start-btn');
+                if (startBtn) {
+                    startBtn.disabled = false;
+                }
+            }
+            
+            // Hide any status messages
+            const statusDiv = document.getElementById('status');
+            if (statusDiv) {
+                statusDiv.classList.add('hidden');
+            }
+            
+            console.log('Ready for new recording');
+            
+            console.log('Ready for new recording');
         });
     }
 }
@@ -131,9 +166,22 @@ function createRecordingCard(recording) {
     const sizeStr = formatFileSize(recording.size);
 
     meta.innerHTML = `
-    <span>📅 ${dateStr} at ${timeStr}</span>
-    <span>•</span>
-    <span>💾 ${sizeStr}</span>
+    <span class="meta-item">
+      <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+        <path d="M6 2V4M14 2V4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        <path d="M3.5 7.5H16.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        <path d="M5.5 4H14.5C15.6046 4 16.5 4.89543 16.5 6V15C16.5 16.1046 15.6046 17 14.5 17H5.5C4.39543 17 3.5 16.1046 3.5 15V6C3.5 4.89543 4.39543 4 5.5 4Z" stroke="currentColor" stroke-width="1.6" />
+      </svg>
+      <span class="meta-text">${dateStr} at ${timeStr}</span>
+    </span>
+    <span class="meta-sep">•</span>
+    <span class="meta-item">
+      <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+        <path d="M6 6.5C6 5.11929 7.11929 4 8.5 4H14C15.1046 4 16 4.89543 16 6V14C16 15.1046 15.1046 16 14 16H8.5C7.11929 16 6 14.8807 6 13.5V6.5Z" stroke="currentColor" stroke-width="1.6"/>
+        <path d="M4 8.5C4 7.11929 5.11929 6 6.5 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      </svg>
+      <span class="meta-text">${sizeStr}</span>
+    </span>
   `;
 
     const actions = document.createElement('div');
@@ -165,21 +213,23 @@ function createRecordingCard(recording) {
     // Event listeners
     actions.querySelector('.view-btn').addEventListener('click', (e) => {
         e.stopPropagation();
-        chrome.tabs.create({ url: recording.driveLink });
+        if (recording.driveLink) chrome.tabs.create({ url: recording.driveLink });
     });
 
     actions.querySelector('.copy-btn').addEventListener('click', async (e) => {
         e.stopPropagation();
+        const btn = e.currentTarget;
         try {
+            if (!recording.driveLink) return;
             await navigator.clipboard.writeText(recording.driveLink);
-            e.target.innerHTML = `
+            btn.innerHTML = `
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
           <path d="M12 4L5.5 10.5L2 7" stroke="currentColor" stroke-width="2" fill="none"/>
         </svg>
         Copied!
       `;
             setTimeout(() => {
-                e.target.innerHTML = `
+                btn.innerHTML = `
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             <rect x="3" y="3" width="8" height="8" rx="1" stroke="currentColor" fill="none"/>
             <path d="M5 3V2a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1h-1" stroke="currentColor" fill="none"/>
@@ -194,7 +244,7 @@ function createRecordingCard(recording) {
 
     // Click card to open video
     card.addEventListener('click', () => {
-        chrome.tabs.create({ url: recording.driveLink });
+        if (recording.driveLink) chrome.tabs.create({ url: recording.driveLink });
     });
 
     return card;

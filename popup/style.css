@@ -11,6 +11,7 @@ body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: #FFFFFF;
   color: #1A1A1A;
+  overflow-x: hidden;
 }
 
 .container {
@@ -131,15 +132,6 @@ body {
   font-size: 16px;
 }
 
-.btn-stop {
-  background: #FF3B3B;
-  color: white;
-}
-
-.btn-stop:hover:not(:disabled) {
-  background: #E62E2E;
-}
-
 /* Recording Mode Options */
 .recording-modes {
   display: flex;
@@ -220,6 +212,58 @@ body {
   display: none;
 }
 
+/* Audio Settings */
+.audio-settings {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+  padding: 12px 16px;
+  background: #F9F9F9;
+  border-radius: 8px;
+  border: 1px solid #E8E8E8;
+}
+
+.audio-settings label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #1A1A1A;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.audio-settings label svg {
+  width: 16px;
+  height: 16px;
+  color: #625DF5;
+}
+
+.audio-select {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #E0E0E0;
+  border-radius: 6px;
+  background: white;
+  color: #1A1A1A;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.audio-select:hover {
+  border-color: #625DF5;
+}
+
+.audio-select:focus {
+  outline: none;
+  border-color: #625DF5;
+  box-shadow: 0 0 0 3px rgba(98, 93, 245, 0.1);
+}
+
 /* Recording Active State */
 .recording-indicator {
   display: flex;
@@ -262,9 +306,59 @@ body {
   font-weight: 700;
   color: #1A1A1A;
   text-align: center;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
   font-variant-numeric: tabular-nums;
   letter-spacing: 2px;
+}
+
+.recording-hint {
+  font-size: 13px;
+  color: #6B6B6B;
+  text-align: center;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Countdown Section */
+.countdown-content {
+  text-align: center;
+  padding: 20px 0;
+}
+
+.countdown-content h2 {
+  font-size: 22px;
+  font-weight: 600;
+  color: #1A1A1A;
+  margin-bottom: 24px;
+}
+
+.countdown-circle {
+  width: 120px;
+  height: 120px;
+  margin: 0 auto 24px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #625DF5 0%, #8B87FF 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 32px rgba(98, 93, 245, 0.3);
+  animation: countdown-pulse 1s ease-in-out infinite;
+}
+
+.countdown-circle span {
+  font-size: 56px;
+  font-weight: 700;
+  color: white;
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes countdown-pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
 }
 
 /* Upload Progress */
@@ -449,6 +543,14 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .btn-icon {
@@ -457,6 +559,11 @@ body {
   background: transparent;
   color: #6B6B6B;
   border-radius: 8px;
+}
+
+.btn:focus-visible {
+  outline: 2px solid rgba(98, 93, 245, 0.55);
+  outline-offset: 2px;
 }
 
 .btn-icon:hover {
@@ -491,6 +598,13 @@ body {
 .section-header .section-title {
   margin-bottom: 0;
   flex: 1;
+}
+
+.section-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 /* Recordings Library */
@@ -562,7 +676,7 @@ body {
 .recording-meta {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   font-size: 12px;
   color: #6B6B6B;
   margin-bottom: 8px;
@@ -572,6 +686,30 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+.recording-meta .meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.recording-meta .meta-item svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.recording-meta .meta-item .meta-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recording-meta .meta-sep {
+  opacity: 0.5;
 }
 
 .recording-actions {
@@ -643,5 +781,20 @@ body {
 
 .recordings-list::-webkit-scrollbar-thumb:hover {
   background: #C8C8C8;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner,
+  .countdown-circle,
+  .recording-pulse,
+  .success-animation {
+    animation: none !important;
+  }
+
+  .btn,
+  .mode-option,
+  .recording-card {
+    transition: none !important;
+  }
 }
 

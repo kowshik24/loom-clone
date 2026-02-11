@@ -12,17 +12,18 @@ let micStream = null;
 let mergedStream = null;
 let mediaRecorder = null;
 let recordedChunks = [];
+let audioContext = null; // Track audio context for proper cleanup
 
 // DOM elements
 const authSection = document.getElementById('auth-section');
 const recordingSection = document.getElementById('recording-section');
+const countdownSection = document.getElementById('countdown-section');
 const recordingActiveSection = document.getElementById('recording-active-section');
 const uploadSection = document.getElementById('upload-section');
 const uploadCompleteSection = document.getElementById('upload-complete-section');
 const recordingsSection = document.getElementById('recordings-section');
 const connectBtn = document.getElementById('connect-btn');
 const startBtn = document.getElementById('start-btn');
-const stopBtn = document.getElementById('stop-btn');
 const statusDiv = document.getElementById('status');
 const progressBar = document.getElementById('progress-fill');
 const progressText = document.getElementById('progress-text');
@@ -30,11 +31,15 @@ const uploadStatus = document.getElementById('upload-status');
 const driveLink = document.getElementById('drive-link');
 const copyLinkBtn = document.getElementById('copy-link-btn');
 const recordingTimer = document.getElementById('recording-timer');
+const countdownNumber = document.getElementById('countdown-number');
 
 // Mode selection elements
 const modeOptions = document.querySelectorAll('.mode-option');
+const audioDeviceSelect = document.getElementById('audio-device-select');
+const micPermissionInfo = document.getElementById('mic-permission-info');
 
 let currentUploadLink = null;
+let selectedAudioDeviceId = ''; // Track selected audio device
 
 // Check authentication status on load
 async function init() {
@@ -55,6 +60,161 @@ async function init() {
 
   hideStatus();
   setupModeSelection();
+  // Try to populate audio devices if permission was previously granted
+  tryPopulateAudioDevices();
+}
+
+// Request microphone permission by opening helper page (avoids popup focus issues)
+async function requestMicrophonePermission() {
+  // First, check if we already have permission
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const audioInputs = devices.filter(device => device.kind === 'audioinput');
+  const hasLabels = audioInputs.some(device => device.label);
+  
+  if (hasLabels) {
+    // Already have permission
+    await populateAudioDevices();
+    return { success: true };
+  }
+  
+  // Open the helper page in a new tab - this avoids the popup closing issue
+  chrome.tabs.create({
+    url: chrome.runtime.getURL('popup/mic-permission.html'),
+    active: true
+  });
+  
+  // Return a pending state - the actual permission will be granted in the new tab
+  return { 
+    success: false, 
+    pending: true, 
+    message: 'Microphone permission page opened. Please grant permission in the new tab.' 
+  };
+}
+
+// Try to populate audio devices without requesting permission (if already granted)
+async function tryPopulateAudioDevices() {
+  try {
+    // Check if we can enumerate devices (this works if permission was previously granted)
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const audioInputs = devices.filter(device => device.kind === 'audioinput');
+    
+    // If we have devices with labels, permission was granted before
+    if (audioInputs.length > 0 && audioInputs.some(device => device.label)) {
+      await populateAudioDevices();
+      // Update storage to reflect that permission is granted
+      await chrome.storage.local.set({ micPermissionGranted: true });
+    } else {
+      // Check storage for permission status (may have been set by helper page)
+      const stored = await chrome.storage.local.get(['micPermissionGranted']);
+      if (stored.micPermissionGranted === true) {
+        // Permission was granted via helper page, try to populate devices
+        await populateAudioDevices();
+      } else {
+        // Permission not granted yet - add a button to request it
+        addPermissionRequestButton();
+      }
+    }
+  } catch (err) {
+    console.warn('Error checking audio devices:', err);
+    addPermissionRequestButton();
+  }
+}
+
+// Setup audio device selector - called after microphone permission is granted
+async function populateAudioDevices() {
+  try {
+    // Enumerate all audio devices (permission already granted from getUserMedia)
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const audioInputs = devices.filter(device => device.kind === 'audioinput');
+    
+    console.log('Found audio devices:', audioInputs.length);
+    
+    // Clear existing options except default
+    audioDeviceSelect.innerHTML = '<option value="">Default Microphone</option>';
+    
+    // Add each audio device as an option
+    audioInputs.forEach((device, index) => {
+      const option = document.createElement('option');
+      option.value = device.deviceId;
+      // If label is empty, it means permission wasn't granted yet
+      option.text = device.label || `Microphone ${index + 1}`;
+      audioDeviceSelect.appendChild(option);
+    });
+    
+    // Remove permission request button if it exists
+    const permissionBtn = document.getElementById('request-mic-permission-btn');
+    if (permissionBtn) {
+      permissionBtn.remove();
+    }
+    
+    // Set event listener for device selection
+    audioDeviceSelect.removeEventListener('change', handleAudioDeviceChange);
+    audioDeviceSelect.addEventListener('change', handleAudioDeviceChange);
+    
+    // Load saved device preference
+    chrome.storage.local.get(['selectedAudioDevice'], (result) => {
+      if (result.selectedAudioDevice) {
+        audioDeviceSelect.value = result.selectedAudioDevice;
+        selectedAudioDeviceId = result.selectedAudioDevice;
+      }
+    });
+  } catch (err) {
+    console.warn('Error enumerating audio devices:', err);
+    // This is optional - continue if enumeration fails
+  }
+}
+
+// Add a button to request microphone permission (opens in new tab to avoid popup focus issues)
+function addPermissionRequestButton() {
+  // Check if button already exists
+  if (document.getElementById('request-mic-permission-btn')) {
+    return;
+  }
+  
+  const audioSettings = document.querySelector('.audio-settings');
+  if (!audioSettings) return;
+  
+  const permissionBtn = document.createElement('button');
+  permissionBtn.id = 'request-mic-permission-btn';
+  permissionBtn.className = 'btn btn-secondary';
+  permissionBtn.style.cssText = 'margin-top: 8px; width: 100%; font-size: 12px; padding: 8px;';
+  permissionBtn.innerHTML = '🔊 Enable Microphone Access';
+  permissionBtn.onclick = async () => {
+    // Open the microphone permission page in a new tab
+    // This avoids the popup closing when the permission dialog appears
+    chrome.tabs.create({
+      url: chrome.runtime.getURL('popup/mic-permission.html'),
+      active: true
+    });
+  };
+  
+  audioSettings.appendChild(permissionBtn);
+}
+
+// Listen for storage changes to detect when permission is granted from the helper page
+chrome.storage.onChanged.addListener((changes, namespace) => {
+  if (namespace === 'local' && changes.micPermissionGranted) {
+    if (changes.micPermissionGranted.newValue === true) {
+      console.log('Microphone permission granted via helper page');
+      // Refresh audio devices and UI
+      populateAudioDevices();
+      // Remove the permission button if it exists
+      const permissionBtn = document.getElementById('request-mic-permission-btn');
+      if (permissionBtn) {
+        permissionBtn.textContent = '✓ Microphone enabled';
+        setTimeout(() => permissionBtn.remove(), 2000);
+      }
+      hideStatus();
+    }
+  }
+});
+
+// Handle audio device selection change
+function handleAudioDeviceChange(e) {
+  selectedAudioDeviceId = e.target.value;
+  console.log('Selected audio device:', selectedAudioDeviceId);
+  // Save preference
+  chrome.storage.local.set({ selectedAudioDevice: selectedAudioDeviceId });
 }
 
 // Setup mode selection handlers
@@ -89,6 +249,37 @@ function setupModeSelection() {
       document.getElementById('mode-screen-camera').classList.add('active');
     }
   });
+
+  // Add focus handler to audio device selector to check/request permission if needed
+  if (audioDeviceSelect) {
+    let permissionChecked = false;
+    audioDeviceSelect.addEventListener('focus', async () => {
+      // Only check once per session
+      if (permissionChecked) return;
+      permissionChecked = true;
+      
+      // Check if we have permission by trying to enumerate devices
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const audioInputs = devices.filter(device => device.kind === 'audioinput');
+        // If no devices have labels, permission wasn't granted
+        if (audioInputs.length === 0 || !audioInputs.some(device => device.label)) {
+          // Permission not granted - show button if not already shown
+          if (!document.getElementById('request-mic-permission-btn')) {
+            addPermissionRequestButton();
+          }
+        } else {
+          // Permission granted - populate devices
+          await populateAudioDevices();
+        }
+      } catch (err) {
+        // On error, show permission button
+        if (!document.getElementById('request-mic-permission-btn')) {
+          addPermissionRequestButton();
+        }
+      }
+    });
+  }
 }
 
 // Show authenticated UI
@@ -98,6 +289,11 @@ function showAuthenticated() {
   recordingActiveSection.classList.add('hidden');
   uploadSection.classList.add('hidden');
   uploadCompleteSection.classList.add('hidden');
+  
+  // Show microphone permission tip
+  if (micPermissionInfo) {
+    micPermissionInfo.style.display = 'block';
+  }
 }
 
 // Show unauthenticated UI
@@ -135,11 +331,37 @@ connectBtn.addEventListener('click', async () => {
 
 // Handle start recording button - NEW POPUP-BASED RECORDING
 startBtn.addEventListener('click', async () => {
+  console.log('Popup: Start button clicked');
+  
+  // Guard against starting a new recording if one is already in progress
+  if (isRecording) {
+    console.log('Popup: Recording already in progress, ignoring start request');
+    showStatus('Recording already in progress', 'warning');
+    return;
+  }
+  
   startBtn.disabled = true;
   showStatus('Starting recording...', 'info');
 
   try {
     console.log('Popup: Starting recording from popup');
+    
+    // Clean up any previous recording state first
+    console.log('Popup: Running cleanup before new recording...');
+    cleanup();
+    
+    // Wait a moment for cleanup to complete and resources to release
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    // Reset state variables to ensure clean start
+    screenStream = null;
+    micStream = null;
+    mergedStream = null;
+    audioContext = null;
+    mediaRecorder = null;
+    recordedChunks = [];
+    
+    console.log('Popup: Cleanup complete, initializing new recording...');
 
     // Get current active tab for overlay
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -157,83 +379,289 @@ startBtn.addEventListener('click', async () => {
       return;
     }
 
-    // Inject content script for overlay
+    // Check and request microphone permission BEFORE screen capture
+    // This gives the user a clear opportunity to grant permission without rushing
+    console.log('Popup: [MIC CHECK] Starting microphone permission check...');
+    let hasMicPermission = false;
+    
     try {
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ['content/overlay.js']
-      });
-      await chrome.scripting.insertCSS({
-        target: { tabId: tab.id },
-        files: ['content/overlay.css']
-      });
-    } catch (e) {
-      console.log('Script injection:', e);
+      // Try to enumerate devices - if we get labels, permission was granted
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const audioInputs = devices.filter(device => device.kind === 'audioinput');
+      console.log('Popup: [MIC CHECK] Found', audioInputs.length, 'audio input devices');
+      
+      // Check if any device has a label (indicates permission was granted)
+      const hasLabels = audioInputs.some(device => device.label && device.label.trim() !== '');
+      hasMicPermission = audioInputs.length > 0 && hasLabels;
+      
+      console.log('Popup: [MIC CHECK] Has microphone permission:', hasMicPermission);
+      if (audioInputs.length > 0) {
+        const labels = audioInputs.map(d => d.label || '(no label)');
+        console.log('Popup: [MIC CHECK] Device labels:', labels);
+        console.log('Popup: [MIC CHECK] Has any labels:', hasLabels);
+      }
+    } catch (err) {
+      console.error('Popup: [MIC CHECK] Could not enumerate devices:', err);
+      hasMicPermission = false; // Assume no permission on error
     }
 
-    // Show overlay
-    try {
-      await chrome.tabs.sendMessage(tab.id, {
-        type: 'SHOW_OVERLAY',
-        mode: selectedMode
-      });
-    } catch (e) {
-      console.log('Overlay message:', e);
+    // Also check storage for permission status (set by mic-permission.html helper page)
+    if (!hasMicPermission) {
+      const stored = await chrome.storage.local.get(['micPermissionGranted']);
+      if (stored.micPermissionGranted === true) {
+        console.log('Popup: [MIC CHECK] Permission granted via helper page (from storage)');
+        hasMicPermission = true;
+      }
     }
+
+    // If no permission, prompt user to enable it via the button (don't request inline - popup will close!)
+    if (!hasMicPermission) {
+      console.log('Popup: [MIC REQUEST] No microphone permission detected');
+      showStatus('⚠️ Microphone not enabled. Click "Enable Microphone Access" above, or recording will continue without audio.', 'warning');
+      
+      // Add the permission button if not already shown
+      if (!document.getElementById('request-mic-permission-btn')) {
+        addPermissionRequestButton();
+      }
+      
+      // Wait a moment for user to see the message
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      hideStatus();
+    } else {
+      console.log('Popup: [MIC CHECK] Microphone permission already granted, skipping request');
+    }
+    
+    console.log('Popup: [MIC FINAL] Final permission status:', hasMicPermission);
 
     // Request screen capture (THIS WILL WORK - popup has user gesture!)
     console.log('Popup: Requesting screen capture...');
     try {
-      screenStream = await navigator.mediaDevices.getDisplayMedia({
-        video: {
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
-          frameRate: { ideal: 30 }
-        },
-        audio: true // Try to get system audio
-      });
+      // First try with preferred constraints
+      try {
+        screenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: {
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+            frameRate: { ideal: 30 }
+          },
+          audio: true // Try to get system audio
+        });
+      } catch (constraintErr) {
+        // If constraints fail, try with minimal options
+        console.warn('Popup: Constraints failed, trying minimal options:', constraintErr.name, constraintErr.message);
+        screenStream = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+          audio: false
+        });
+      }
       console.log('Popup: Screen stream obtained!');
+      
+      // Log stream details
+      const videoTracks = screenStream.getVideoTracks();
+      const audioTracks = screenStream.getAudioTracks();
+      console.log('Popup: Stream details - video tracks:', videoTracks.length, 'audio tracks:', audioTracks.length);
+      if (videoTracks[0]) {
+        console.log('Popup: Video track state:', videoTracks[0].readyState, 'label:', videoTracks[0].label);
+        // Add ended listener early
+        videoTracks[0].addEventListener('ended', () => {
+          console.log('Popup: VIDEO TRACK ENDED EVENT FIRED!');
+        });
+      }
     } catch (err) {
-      console.error('Popup: getDisplayMedia error:', err);
-      showStatus('Screen sharing cancelled or failed', 'error');
+      console.error('Popup: getDisplayMedia error:', err.name, err.message, err);
+      
+      let errorMessage = 'Screen sharing failed';
+      if (err.name === 'NotAllowedError') {
+        if (err.message?.includes('cancelled') || err.message?.includes('denied')) {
+          errorMessage = 'Screen sharing was cancelled. Please click Start and select a screen/window to share.';
+        } else {
+          errorMessage = 'Screen sharing permission denied. Please allow screen sharing when prompted.';
+        }
+      } else if (err.name === 'NotFoundError') {
+        errorMessage = 'No screen or window available to share.';
+      } else if (err.name === 'NotReadableError') {
+        errorMessage = 'Could not access the selected screen. It may be in use.';
+      } else if (err.name === 'AbortError') {
+        errorMessage = 'Screen sharing was aborted. Please try again.';
+      } else if (err.name === 'InvalidStateError') {
+        errorMessage = 'Another screen share is already active. Please stop it first.';
+      } else {
+        errorMessage = `Screen sharing failed: ${err.name || 'Unknown error'}`;
+      }
+      
+      showStatus(errorMessage, 'error');
       startBtn.disabled = false;
       return;
     }
 
-    // Request microphone (optional)
-    console.log('Popup: Requesting microphone...');
-    try {
-      micStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
+    // Get microphone stream (only if permission was granted earlier)
+    console.log('Popup: Getting microphone stream...');
+    if (hasMicPermission) {
+      try {
+        const audioConstraints = {
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true
+        };
+        
+        // If a specific device is selected, try to use it (but fallback to default if unavailable)
+        if (selectedAudioDeviceId) {
+          // First try with exact device
+          try {
+            audioConstraints.deviceId = { exact: selectedAudioDeviceId };
+            micStream = await navigator.mediaDevices.getUserMedia({
+              audio: audioConstraints
+            });
+            console.log('Popup: Microphone obtained successfully with selected device');
+          } catch (exactErr) {
+            // If exact device fails, try with ideal (fallback)
+            console.warn('Popup: Selected device unavailable, trying fallback...');
+            audioConstraints.deviceId = { ideal: selectedAudioDeviceId };
+            micStream = await navigator.mediaDevices.getUserMedia({
+              audio: audioConstraints
+            });
+            console.log('Popup: Microphone obtained with fallback device');
+          }
+        } else {
+          // No specific device selected, use default
+          micStream = await navigator.mediaDevices.getUserMedia({
+            audio: audioConstraints
+          });
+          console.log('Popup: Microphone obtained successfully (default device)');
         }
-      });
-      console.log('Popup: Microphone obtained');
-    } catch (err) {
-      console.warn('Popup: Microphone denied, continuing without it');
+      } catch (err) {
+        console.warn('Popup: Failed to get microphone stream:', err.name, err.message);
+        // If we had permission but can't get stream, it might be device-specific issue
+        if (err.name === 'NotFoundError') {
+          showStatus('No microphone found. Recording without audio.', 'warning');
+        } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+          showStatus('Microphone is in use by another app. Recording without audio.', 'warning');
+        } else if (err.name === 'OverconstrainedError') {
+          // Try with default device
+          try {
+            micStream = await navigator.mediaDevices.getUserMedia({
+              audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+              }
+            });
+            console.log('Popup: Microphone obtained with default device after fallback');
+          } catch (fallbackErr) {
+            console.warn('Popup: Fallback to default also failed:', fallbackErr);
+            micStream = null;
+          }
+        } else {
+          micStream = null;
+        }
+      }
+    } else {
+      console.log('Popup: Skipping microphone (permission not granted)');
       micStream = null;
     }
 
     // Merge streams
     console.log('Popup: Merging streams...');
+    
+    // Check video track state before merging
+    const preCheckTrack = screenStream.getVideoTracks()[0];
+    console.log('Popup: Pre-merge video track state:', preCheckTrack?.readyState);
+    if (preCheckTrack?.readyState !== 'live') {
+      console.error('Popup: Video track is not live before merging!');
+      showStatus('Screen share ended before recording could start. Please try again.', 'error');
+      cleanup();
+      resetToReadyState();
+      return;
+    }
+    
     if (micStream) {
       mergedStream = await mergeAudioStreams(screenStream, micStream);
     } else {
       mergedStream = screenStream;
+    }
+    
+    // Check video track state after merging
+    const postCheckTrack = mergedStream.getVideoTracks()[0];
+    console.log('Popup: Post-merge video track state:', postCheckTrack?.readyState);
+
+    // Show countdown before starting recording
+    hideStatus();
+    recordingSection.classList.add('hidden');
+    
+    // Ensure countdown section is visible
+    console.log('Popup: Showing countdown section...');
+    countdownSection.classList.remove('hidden');
+    
+    // Force a reflow to ensure the section is rendered
+    void countdownSection.offsetHeight;
+
+    // Store the tab ID for overlay injection
+    const recordingTabId = tab.id;
+
+    // Start countdown
+    console.log('Popup: Starting countdown animation...');
+    
+    // Check video track state before countdown
+    const preCountdownTrack = mergedStream.getVideoTracks()[0];
+    console.log('Popup: Pre-countdown video track state:', preCountdownTrack?.readyState);
+    
+    await startCountdown();
+    
+    // Check video track state after countdown
+    const postCountdownTrack = mergedStream.getVideoTracks()[0];
+    console.log('Popup: Post-countdown video track state:', postCountdownTrack?.readyState);
+    
+    if (postCountdownTrack?.readyState !== 'live') {
+      console.error('Popup: Video track ended during countdown!');
+      showStatus('Screen share ended during countdown. Please try again and keep the shared window visible.', 'error');
+      cleanup();
+      resetToReadyState();
+      return;
+    }
+    
+    console.log('Popup: Countdown finished!');
+
+    // Inject content script for overlay (after countdown)
+    // Note: This may fail on some pages (e.g., Chrome Web Store) but recording will still work
+    let overlayInjected = false;
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: recordingTabId },
+        files: ['content/overlay.js']
+      });
+      await chrome.scripting.insertCSS({
+        target: { tabId: recordingTabId },
+        files: ['content/overlay.css']
+      });
+      overlayInjected = true;
+      console.log('Popup: Overlay injected successfully');
+    } catch (e) {
+      console.warn('Popup: Could not inject overlay (this is OK, recording will still work):', e.message);
+      // Recording will continue without the overlay - this is fine for restricted pages
+    }
+
+    // Show overlay if injection was successful
+    if (overlayInjected) {
+      try {
+        await chrome.tabs.sendMessage(recordingTabId, {
+          type: 'SHOW_OVERLAY',
+          mode: selectedMode
+        });
+      } catch (e) {
+        console.log('Popup: Overlay message error:', e.message);
+      }
     }
 
     // Start MediaRecorder
     console.log('Popup: Starting MediaRecorder...');
     startMediaRecorder();
 
-    // Update UI
+    // Update UI - Show recording status without stop button
     isRecording = true;
-    recordingSection.classList.add('hidden');
+    countdownSection.classList.add('hidden');
     recordingActiveSection.classList.remove('hidden');
     startRecordingTimer();
-    hideStatus();
+    startKeepAlive(); // Keep popup alive during recording
 
     console.log('Popup: Recording started successfully!');
 
@@ -241,19 +669,50 @@ startBtn.addEventListener('click', async () => {
     console.error('Start recording error:', error);
     showStatus('Failed to start recording: ' + error.message, 'error');
     cleanup();
+    // Reset UI to ready state
+    resetToReadyState();
   } finally {
     startBtn.disabled = false;
   }
 });
 
-// Handle stop recording button (in popup) - NEW VERSION
-stopBtn.addEventListener('click', async () => {
-  stopBtn.disabled = true;
-  console.log('Popup: Stop button clicked');
+// Reset UI to ready state
+function resetToReadyState() {
+  console.log('Popup: Resetting to ready state');
+  
+  // Hide all sections first
+  countdownSection.classList.add('hidden');
+  recordingActiveSection.classList.add('hidden');
+  uploadSection.classList.add('hidden');
+  uploadCompleteSection.classList.add('hidden');
+  
+  // Show recording section
+  recordingSection.classList.remove('hidden');
+  
+  // Enable start button
+  startBtn.disabled = false;
+  
+  // Reset countdown display
+  if (countdownNumber) {
+    countdownNumber.textContent = '3';
+    countdownNumber.style.fontSize = '';
+    countdownNumber.style.transform = '';
+  }
+  
+  // Reset timer display
+  if (recordingTimer) {
+    recordingTimer.textContent = '00:00';
+  }
+}
+
+// Handle stop recording - called when overlay requests stop
+async function stopRecording() {
+  console.log('Popup: Stop recording requested');
 
   try {
-    // Stop timer
+    // Stop timer and keep-alive
     stopRecordingTimer();
+    stopKeepAlive();
     isRecording = false;
 
     // Hide overlay
@@ -279,10 +738,8 @@ stopBtn.addEventListener('click', async () => {
     cleanup();
     recordingActiveSection.classList.add('hidden');
     recordingSection.classList.remove('hidden');
-  } finally {
-    stopBtn.disabled = false;
   }
-});
+}
 
 // Show status message
 function showStatus(message, type = 'info') {
@@ -334,6 +791,61 @@ function updateTimerDisplay() {
   recordingTimer.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
+// Countdown before recording starts
+async function startCountdown() {
+  return new Promise((resolve) => {
+    let count = 3;
+    
+    // Re-fetch countdown element in case DOM changed
+    const countdownEl = document.getElementById('countdown-number');
+    
+    // Ensure countdown number element exists
+    if (!countdownEl) {
+      console.error('Popup: Countdown element not found!');
+      resolve();
+      return;
+    }
+    
+    // Reset countdown display
+    countdownEl.textContent = '3';
+    countdownEl.style.fontSize = '';  // Reset any previous font size changes
+    countdownEl.style.transform = '';
+    countdownEl.style.opacity = '1'; // Ensure visible
+    
+    console.log('Popup: Starting countdown... Element found:', !!countdownEl);
+    
+    const updateCountdown = () => {
+      console.log('Popup: Countdown:', count);
+      countdownEl.textContent = count;
+      
+      // Add a pulse animation class
+      countdownEl.style.transform = 'scale(1.2)';
+      setTimeout(() => {
+        if (countdownEl) countdownEl.style.transform = 'scale(1)';
+      }, 200);
+      
+      count--;
+      
+      if (count < 0) {
+        // Show "Go!" briefly before resolving
+        countdownEl.textContent = 'GO!';
+        countdownEl.style.fontSize = '40px';
+        console.log('Popup: Countdown complete!');
+        setTimeout(() => {
+          if (countdownEl) countdownEl.style.fontSize = '';
+          resolve();
+        }, 500);
+      } else {
+        setTimeout(updateCountdown, 1000);
+      }
+    };
+    
+    // Small delay before starting to ensure UI is ready
+    console.log('Popup: Initiating countdown in 100ms...');
+    setTimeout(updateCountdown, 100);
+  });
+}
+
 // Show upload complete with link
 function showUploadComplete(link) {
   currentUploadLink = link;
@@ -374,7 +886,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // Handle stop request from overlay
   if (request.type === 'STOP_RECORDING_FROM_OVERLAY') {
     console.log('Popup: Received stop request from overlay');
-    stopBtn.click(); // Trigger the stop button
+    stopRecording(); // Call the stop recording function
     sendResponse({ success: true });
     return;
   }
@@ -444,7 +956,16 @@ function showExtensionId() {
 
 // Merge audio streams
 async function mergeAudioStreams(screenStream, micStream) {
-  const audioContext = new AudioContext();
+  // Close any existing audio context first
+  if (audioContext) {
+    try {
+      await audioContext.close();
+    } catch (e) {
+      console.log('Popup: Error closing previous audioContext:', e);
+    }
+  }
+  
+  audioContext = new AudioContext();
   const destination = audioContext.createMediaStreamDestination();
 
   // Add screen audio if available
@@ -481,6 +1002,30 @@ async function mergeAudioStreams(screenStream, micStream) {
 
 // Start MediaRecorder
 function startMediaRecorder() {
+  console.log('Popup: Starting MediaRecorder setup...');
+  
+  // Safety check - ensure we have a valid stream
+  if (!mergedStream) {
+    console.error('Popup: No merged stream available for recording!');
+    showStatus('Recording failed - no stream available', 'error');
+    isRecording = false;
+    resetToReadyState();
+    return;
+  }
+  
+  // Check if the stream has active video tracks
+  const videoTracks = mergedStream.getVideoTracks();
+  if (videoTracks.length === 0 || videoTracks[0].readyState !== 'live') {
+    console.error('Popup: Video track not available or not live!', videoTracks);
+    showStatus('Recording failed - video stream ended', 'error');
+    isRecording = false;
+    resetToReadyState();
+    cleanup();
+    return;
+  }
+  
+  console.log('Popup: Stream valid, video tracks:', videoTracks.length, 'state:', videoTracks[0].readyState);
+  
   recordedChunks = [];
 
   // Prioritize MP4 (best for Drive), then VP8 (best compatibility), then default
@@ -492,41 +1037,57 @@ function startMediaRecorder() {
     mimeType = 'video/webm'; // Fallback to browser default if VP8 explicit fails
   }
 
+  console.log('Popup: Using mimeType:', mimeType);
+
   const options = {
     mimeType: mimeType,
     videoBitsPerSecond: 2500000
   };
 
-  mediaRecorder = new MediaRecorder(mergedStream, options);
+  try {
+    mediaRecorder = new MediaRecorder(mergedStream, options);
+    console.log('Popup: MediaRecorder created successfully');
 
-  mediaRecorder.ondataavailable = (event) => {
-    if (event.data && event.data.size > 0) {
-      recordedChunks.push(event.data);
-      console.log('Popup: Chunk recorded, total chunks:', recordedChunks.length);
-    }
-  };
-
-  mediaRecorder.onstop = async () => {
-    console.log('Popup: MediaRecorder stopped');
-    await handleRecordingStop();
-  };
-
-  mediaRecorder.onerror = (event) => {
-    console.error('Popup: MediaRecorder error:', event);
-  };
-
-  // Handle user stopping screen share
-  if (screenStream) {
-    screenStream.getVideoTracks()[0].onended = () => {
-      console.log('Popup: Screen sharing stopped by user');
-      if (isRecording) {
-        stopRecording();
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data && event.data.size > 0) {
+        recordedChunks.push(event.data);
+        console.log('Popup: Chunk recorded, total chunks:', recordedChunks.length);
       }
     };
-  }
 
-  mediaRecorder.start(1000); // Collect data every second
-  console.log('Popup: MediaRecorder started');
+    mediaRecorder.onstop = async () => {
+      console.log('Popup: MediaRecorder stopped');
+      await handleRecordingStop();
+    };
+
+    mediaRecorder.onerror = (event) => {
+      console.error('Popup: MediaRecorder error:', event);
+      showStatus('Recording error: ' + (event.error?.message || 'Unknown error'), 'error');
+    };
+
+    // Handle user stopping screen share
+    if (screenStream) {
+      const videoTrack = screenStream.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.onended = () => {
+          console.log('Popup: Screen sharing stopped by user');
+          if (isRecording) {
+            stopRecording();
+          }
+        };
+      }
+    }
+
+    mediaRecorder.start(1000); // Collect data every second
+    console.log('Popup: MediaRecorder started successfully!');
+    
+  } catch (error) {
+    console.error('Popup: Failed to create/start MediaRecorder:', error);
+    showStatus('Recording failed: ' + error.message, 'error');
+    isRecording = false;
+    resetToReadyState();
+    cleanup();
+  }
 }
 
 // Handle recording stop
@@ -615,19 +1176,57 @@ async function handleRecordingStop() {
 function cleanup() {
   console.log('Popup: Cleaning up resources');
 
+  // Stop keep-alive first
+  stopKeepAlive();
+  
+  // Stop recording timer
+  stopRecordingTimer();
+
   if (screenStream) {
-    screenStream.getTracks().forEach(track => track.stop());
+    try {
+      screenStream.getTracks().forEach(track => {
+        track.stop();
+        console.log('Popup: Stopped screen track:', track.kind);
+      });
+    } catch (e) {
+      console.log('Popup: Error stopping screenStream:', e);
+    }
     screenStream = null;
   }
 
   if (micStream) {
-    micStream.getTracks().forEach(track => track.stop());
+    try {
+      micStream.getTracks().forEach(track => {
+        track.stop();
+        console.log('Popup: Stopped mic track:', track.kind);
+      });
+    } catch (e) {
+      console.log('Popup: Error stopping micStream:', e);
+    }
     micStream = null;
   }
 
   if (mergedStream) {
-    mergedStream.getTracks().forEach(track => track.stop());
+    try {
+      mergedStream.getTracks().forEach(track => {
+        track.stop();
+        console.log('Popup: Stopped merged track:', track.kind);
+      });
+    } catch (e) {
+      console.log('Popup: Error stopping mergedStream:', e);
+    }
     mergedStream = null;
+  }
+  
+  // Close audio context
+  if (audioContext) {
+    try {
+      audioContext.close();
+      console.log('Popup: Closed audioContext');
+    } catch (e) {
+      console.log('Popup: Error closing audioContext:', e);
+    }
+    audioContext = null;
   }
 
   if (mediaRecorder && mediaRecorder.state !== 'inactive') {
@@ -640,10 +1239,61 @@ function cleanup() {
 
   mediaRecorder = null;
   recordedChunks = [];
+  isRecording = false;
 }
 
+// Keep popup window persistent during recording
+// This prevents the popup from being garbage collected when focus changes
+let keepAliveInterval = null;
+let keepAliveFailureCount = 0;
+
+function startKeepAlive() {
+  if (keepAliveInterval) return;
+  
+  // Ping the background script periodically to keep the popup alive
+  keepAliveInterval = setInterval(() => {
+    if (isRecording) {
+      chrome.runtime.sendMessage({ type: 'KEEP_ALIVE' })
+        .then(() => {
+          keepAliveFailureCount = 0; // Reset on success
+        })
+        .catch((error) => {
+          keepAliveFailureCount++;
+          console.warn(`Keep-alive failed (attempt ${keepAliveFailureCount}):`, error);
+          
+          // If too many failures, log warning but continue recording
+          if (keepAliveFailureCount >= 3) {
+            console.error('Keep-alive mechanism failing - popup may be at risk of termination');
+          }
+        });
+    } else {
+      stopKeepAlive();
+    }
+  }, 5000); // Every 5 seconds
+}
+
+function stopKeepAlive() {
+  if (keepAliveInterval) {
+    clearInterval(keepAliveInterval);
+    keepAliveInterval = null;
+    keepAliveFailureCount = 0;
+  }
+}
+
+// Global error handler to catch unexpected issues
+window.onerror = function(message, source, lineno, colno, error) {
+  console.error('Popup: Global error:', message, 'at', source, lineno, colno);
+  console.error('Error object:', error);
+  return false;
+};
+
+window.onunhandledrejection = function(event) {
+  console.error('Popup: Unhandled promise rejection:', event.reason);
+};
+
 // Initialize on load
+console.log('Popup: Initializing...');
 init();
 showExtensionId();
-
 setupRecordingsUI(); // Initialize recordings history UI
+console.log('Popup: Initialization complete');

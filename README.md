@@ -1,152 +1,72 @@
-# Loom Clone Chrome Extension
+# Drive Loom Clone 📹
 
-A Chrome extension that clones Loom functionality, allowing you to record your screen with a camera bubble overlay and automatically upload videos to Google Drive.
+![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
+![Chrome](https://img.shields.io/badge/platform-Chrome_Extension-orange)
 
-## Features
+**Professional screen recording, directly in your browser.**
 
-### Recording Modes
-- 🎥 **Screen + Camera**: Record your screen with camera bubble overlay
-- 🖥️ **Screen Only**: Record just your screen without camera
-- 📹 **Camera Only**: Record just your camera feed
+Drive Loom Clone is a privacy-focused Chrome Extension that emulates the core functionality of Loom. It records your screen and camera, then automatically uploads the video to your **personal Google Drive**. No third-party servers, no subscriptions, and complete control over your data.
 
-### Recording Controls
-- ⏸️ **Pause/Resume**: Pause and resume your recording anytime
-- ⏱️ **Live Timer**: See recording duration in real-time
-- 🎯 **Visual Indicators**: Clear recording status with animated indicators
-- 🎨 **Draggable Camera Bubble**: Reposition camera anywhere on screen
+---
 
-### Audio & Video
-- 🎤 Microphone and system audio capture
-- 🔊 Multi-track audio mixing
-- 📺 HD video quality (up to 1080p)
+## 🚀 Key Features
 
-### Storage & Sharing
-- 📁 Automatic upload to Google Drive
-- 🔗 Shareable links copied to clipboard
-- 📊 Real-time upload progress
-- ✅ Success animations and feedback
+*   **Privacy-First Architecture**: Videos travel directly from your browser to your Google Drive. We never see your content.
+*   **Flexible Recording Modes**:
+    *   **Screen + Camera**: Perfect for tutorials and presentations.
+    *   **Screen Only**: Ideal for technical walkthroughs.
+    *   **Camera Only**: Great for personal messages.
+*   **Professional Overlay**: Features a draggable, circular camera bubble and a non-intrusive control bar.
+*   **Instant Sharing**: A shareable Drive link is copied to your clipboard immediately after upload.
+*   **Smart Storage**: Utilizes `resumable uploads` for reliability, even with large files.
 
-### User Interface
-- 🎨 Modern Loom-inspired design
-- 🌈 Smooth animations and transitions
-- 📱 Responsive and intuitive controls
-- 🎯 Beautiful visual feedback
+## �️ Installation & Setup
 
-## Setup Instructions
+Since this extension interacts with your personal Google Drive, a one-time setup is required to authorize the application.
 
-### 1. Google Cloud Console Setup
+### Prerequisites
+*   Google Chrome (or Chromium-based browser)
+*   A Google Cloud Project
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project or select an existing one
-3. Enable the **Google Drive API**:
-   - Navigate to "APIs & Services" > "Library"
-   - Search for "Google Drive API" and enable it
-4. Create OAuth 2.0 Credentials:
-   - Go to "APIs & Services" > "Credentials"
-   - Click "Create Credentials" > "OAuth client ID"
-   - Choose "Chrome Extension" as the application type
-   - Add your extension ID (you'll get this after loading the extension)
-   - Copy the Client ID
+### Step 1: Google Cloud Configuration
+1.  Navigate to the [Google Cloud Console](https://console.cloud.google.com/).
+2.  Create a new project (e.g., "My Recorder").
+3.  **Enable API**: Search for and enable the **Google Drive API**.
+4.  **Create Credentials**:
+    *   Go to **APIs & Services > Credentials**.
+    *   Click **Create Credentials > OAuth client ID**.
+    *   Select **Chrome Extension** as the application type.
+    *   *Keep this tab open; you will need to paste your Extension ID here in Step 3.*
 
-### 2. Configure Extension
+### Step 2: Local Configuration
+1.  Open the `manifest.json` file in this repository.
+2.  Locate the `"oauth2"` section.
+3.  Replace the `client_id` value with the **Client ID** generated in Step 1.
 
-1. Open `manifest.json`
-2. Replace `YOUR_GOOGLE_CLOUD_CLIENT_ID.apps.googleusercontent.com` with your actual Client ID from step 1
+### Step 3: Load Extension
+1.  Open Chrome and go to `chrome://extensions/`.
+2.  Enable **Developer mode** (toggle in the top-right corner).
+3.  Click **Load unpacked** and select the extension directory.
+4.  **Crucial Step**: Copy the generated **Extension ID** (e.g., `abcdef...`) from the extensions page.
+5.  Return to the Google Cloud Console and add this ID to your OAuth Client configuration under **Item ID**.
 
-### 3. Load Extension in Chrome
+## 💻 Tech Stack
 
-1. Open Chrome and navigate to `chrome://extensions/`
-2. Enable "Developer mode" (toggle in top right)
-3. Click "Load unpacked"
-4. Select the `my-loom-clone` directory
-5. Copy the Extension ID shown on the extensions page
-6. Go back to Google Cloud Console and add this Extension ID to your OAuth client credentials
+Built with modern web standards for performance and maintainability.
 
-### 4. Create Icon Files (Optional)
+*   **Manifest V3**: Future-proof extension architecture.
+*   **Offscreen Documents**: Handles media processing without impacting browser performance.
+*   **Shadow DOM**: Ensures the recording overlay interacts consistently with any website.
+*   **Google Drive API v3**: Robust, resumable file uploads.
 
-Create an `images` directory and add icon files:
-- `icon16.png` (16x16 pixels)
-- `icon48.png` (48x48 pixels)
-- `icon128.png` (128x128 pixels)
+## 🔒 Privacy & Security
 
-Or remove the icon references from `manifest.json` if you don't have icons yet.
+This project is open-source and designed with privacy as the core tenet.
+*   **No Tracking**: No analytics or tracking scripts.
+*   **Direct Upload**: Data flows only between your client and Google's servers.
+*   **Local Processing**: Thumbnail generation and blob processing happen locally on your device.
 
-## Usage
+---
 
-1. **First Time Setup:**
-   - Click the extension icon
-   - Click "Connect Google Drive"
-   - Authorize the extension in the popup window
-
-2. **Record a Video:**
-   - Click the extension icon
-   - Choose your recording mode:
-     - **Screen + Camera** (default)
-     - **Screen Only** 
-     - **Camera Only**
-   - Click "Start Recording"
-   - Select what to share (screen, window, or tab) in Chrome's share dialog
-   - Allow microphone access when prompted
-   - The recording interface will appear:
-     - Camera bubble (if enabled) - drag to reposition
-     - Controls bar with pause/resume and stop buttons
-     - Live recording timer
-   - Click "Pause" to pause recording (click again to resume)
-   - Click "Stop" when done
-
-3. **Share:**
-   - The video will automatically upload to Google Drive
-   - A shareable link will be copied to your clipboard
-   - Paste it wherever you want to share!
-
-## File Structure
-
-```
-my-loom-clone/
-├── manifest.json          # Extension configuration
-├── background.js          # Service worker (auth & orchestration)
-├── popup/                 # Extension popup UI
-│   ├── popup.html
-│   ├── popup.js
-│   └── style.css
-├── content/               # Content script overlay
-│   ├── overlay.js
-│   ├── overlay.css
-│   └── controls.html
-├── offscreen/             # Recording engine
-│   ├── recorder.html
-│   └── recorder.js
-└── utils/                 # Utilities
-    └── drive-api.js       # Google Drive API helpers
-```
-
-## Technical Details
-
-- **Manifest V3** compliant
-- Uses **Offscreen Document** for recording (required for MV3)
-- **Shadow DOM** for UI isolation
-- **OAuth2** via Chrome Identity API
-- **MediaRecorder API** for video capture
-- **Google Drive API** for storage
-
-## Permissions
-
-- `activeTab` - Access current tab for overlay injection
-- `scripting` - Inject content scripts
-- `storage` - Store authentication status
-- `identity` - OAuth2 authentication
-- `offscreen` - Create offscreen document for recording
-- `notifications` - Show upload status
-- `tabs` - Access tab information
-
-## Troubleshooting
-
-- **"Not authenticated" error**: Make sure you've completed the OAuth setup and added your Extension ID to Google Cloud Console
-- **Camera not showing**: Check browser permissions for camera access
-- **Recording not starting**: Ensure you've selected a screen/window/tab in Chrome's share dialog
-- **Upload fails**: Check your internet connection and ensure Google Drive API is enabled
-
-## License
-
-MIT
-
+*This project is for educational purposes and personal use.*
