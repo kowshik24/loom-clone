@@ -7,6 +7,7 @@ let mediaRecorder = null;
 let recordedChunks = [];
 let isRecording = false;
 let isPaused = false;
+let currentMode = 'screen-camera';
 
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -15,7 +16,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // Only respond to messages explicitly marked for offscreen
   if (request.type === 'START_RECORDING' && request.toOffscreen === true) {
     console.log('Offscreen: Processing START_RECORDING with streamId:', request.streamId);
-    startRecording(request.streamId)
+    startRecording(request.streamId, request.mode || 'screen-camera')
       .then(() => {
         console.log('Offscreen: Recording started successfully');
         sendResponse({ success: true });
@@ -55,7 +56,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.type === 'STOP_RECORDING' && request.toOffscreen === true) {
     console.log('Offscreen: Processing STOP_RECORDING');
-    stopRecording()
+    stopRecording(false)
       .then(() => {
         sendResponse({ success: true });
       })
@@ -68,78 +69,67 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 // Start recording with stream ID from chrome.desktopCapture
-async function startRecording(streamId) {
+async function startRecording(streamId, mode = 'screen-camera') {
   if (isRecording) {
     console.log('Already recording');
     return;
   }
 
   try {
-    // 1. Get screen stream using getUserMedia with chromeMed constraints
-    console.log('Offscreen: Getting screen stream with ID:', streamId);
+    currentMode = mode;
 
-    if (!streamId) {
-      throw new Error('No stream ID provided from desktopCapture');
-    }
-
-    try {
-      // Use the legacy getUserMedia API with callback (works better with desktopCapture)
-      console.log('Offscreen: Requesting screen stream with streamId...');
-      screenStream = await new Promise((resolve, reject) => {
-        navigator.webkitGetUserMedia({
-          audio: false,
-          video: {
-            mandatory: {
-              chromeMediaSource: 'desktop',
-              chromeMediaSourceId: streamId,
-              maxWidth: 1920,
-              maxHeight: 1080
-            }
-          }
-        }, resolve, reject);
+    // 1) Create base video stream
+    if (mode === 'camera-only') {
+      console.log('Offscreen: Starting camera-only recording');
+      screenStream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30 },
+          facingMode: 'user'
+        },
+        audio: false
       });
+    } else {
+      console.log('Offscreen: Getting screen stream with ID:', streamId);
+      if (!streamId) {
+        throw new Error('No stream ID provided from desktopCapture');
+      }
+      screenStream = await getDesktopStream(streamId);
       console.log('Offscreen: Screen stream obtained successfully!');
       console.log('Offscreen: Video tracks:', screenStream.getVideoTracks().length);
-    } catch (err) {
-      console.error('Offscreen: getUserMedia (screen) error:', err.name, err.message);
-      console.error('Offscreen: Full error:', err);
-      console.error('Offscreen: StreamId was:', streamId);
-      throw new Error(`Screen capture failed: ${err.name} - ${err.message}. Chrome may not support this stream ID format.`);
     }
 
-    // 2. Get microphone stream (OPTIONAL - if user denies, continue without mic)
-    console.log('Offscreen: Requesting microphone...');
-    try {
-      micStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
-      });
-      console.log('Offscreen: Microphone obtained successfully');
-    } catch (err) {
-      console.warn('Offscreen: Microphone access denied or dismissed:', err.name, err.message);
-      console.log('Offscreen: Continuing without microphone audio (this is OK)');
-      micStream = null; // Continue without mic - this is not an error!
+    // 2) Get microphone stream when mode supports it
+    micStream = null;
+    if (mode !== 'screen-only') {
+      console.log('Offscreen: Requesting microphone...');
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        });
+        console.log('Offscreen: Microphone obtained successfully');
+      } catch (err) {
+        console.warn('Offscreen: Microphone access denied or dismissed:', err.name, err.message);
+        console.log('Offscreen: Continuing without microphone audio');
+      }
     }
 
-    // 3. Merge audio tracks (or use screen audio only if no mic)
+    // 3) Build final merged stream
     console.log('Offscreen: Preparing audio streams...');
     try {
       if (micStream) {
-        console.log('Offscreen: Merging screen + microphone audio...');
         mergedStream = await mergeAudioStreams(screenStream, micStream);
-        console.log('Offscreen: Streams merged successfully (screen + mic)');
+        console.log('Offscreen: Streams merged successfully');
       } else {
-        // Use screen stream only (no mic audio)
-        console.log('Offscreen: Using screen stream only (no microphone)');
         mergedStream = screenStream;
       }
     } catch (err) {
       console.error('Offscreen: Error merging streams:', err);
-      // Fallback to screen only if merge fails
-      console.log('Offscreen: Falling back to screen stream only');
       mergedStream = screenStream;
     }
 
@@ -175,12 +165,15 @@ async function startRecording(streamId) {
       console.error('MediaRecorder error:', event);
     };
 
-    // Handle stream ended (user stops sharing)
-    screenStream.getVideoTracks()[0].onended = () => {
-      if (isRecording) {
-        stopRecording();
-      }
-    };
+    // Handle stream ended (user stops sharing/camera)
+    const primaryTrack = screenStream.getVideoTracks()[0];
+    if (primaryTrack) {
+      primaryTrack.onended = () => {
+        if (isRecording) {
+          stopRecording(true);
+        }
+      };
+    }
 
     // Start recording
     mediaRecorder.start(1000); // Collect data every second
@@ -191,6 +184,45 @@ async function startRecording(streamId) {
     console.error('Error starting recording:', error);
     cleanup();
     throw error;
+  }
+}
+
+async function getDesktopStream(streamId) {
+  try {
+    console.log('Offscreen: Requesting screen stream with system audio...');
+    return await new Promise((resolve, reject) => {
+      navigator.webkitGetUserMedia({
+        audio: {
+          mandatory: {
+            chromeMediaSource: 'desktop',
+            chromeMediaSourceId: streamId
+          }
+        },
+        video: {
+          mandatory: {
+            chromeMediaSource: 'desktop',
+            chromeMediaSourceId: streamId,
+            maxWidth: 1920,
+            maxHeight: 1080
+          }
+        }
+      }, resolve, reject);
+    });
+  } catch (err) {
+    console.warn('Offscreen: Screen+audio capture failed, retrying without system audio:', err.name, err.message);
+    return await new Promise((resolve, reject) => {
+      navigator.webkitGetUserMedia({
+        audio: false,
+        video: {
+          mandatory: {
+            chromeMediaSource: 'desktop',
+            chromeMediaSourceId: streamId,
+            maxWidth: 1920,
+            maxHeight: 1080
+          }
+        }
+      }, resolve, reject);
+    });
   }
 }
 
@@ -272,12 +304,21 @@ async function resumeRecording() {
 }
 
 // Stop recording
-async function stopRecording() {
+async function stopRecording(notifyPopup = true) {
   if (!isRecording || !mediaRecorder) {
     return;
   }
 
   try {
+    if (notifyPopup) {
+      chrome.runtime.sendMessage({
+        type: 'RECORDING_STOPPING',
+        toPopup: true
+      }).catch(() => {
+        // Popup might be closed, ignore
+      });
+    }
+
     if (mediaRecorder.state === 'recording' || mediaRecorder.state === 'paused') {
       mediaRecorder.stop();
     }
@@ -294,6 +335,7 @@ async function stopRecording() {
 async function handleRecordingStop() {
   try {
     console.log('Offscreen: handleRecordingStop called, chunks:', recordedChunks.length);
+    const finishedMode = currentMode;
 
     // Stop all tracks
     cleanup();
@@ -328,7 +370,8 @@ async function handleRecordingStop() {
       type: 'VIDEO_BLOB',
       arrayBuffer: arrayBuffer,
       blobSize: blob.size,
-      mimeType: blob.type
+      mimeType: blob.type,
+      mode: finishedMode
     }, (response) => {
       if (chrome.runtime.lastError) {
         console.error('Offscreen: Error sending video:', chrome.runtime.lastError);
@@ -343,6 +386,8 @@ async function handleRecordingStop() {
         console.log('Offscreen: VIDEO_BLOB sent successfully, response:', response);
       }
     });
+
+    recordedChunks = [];
 
   } catch (error) {
     console.error('Error handling recording stop:', error);
@@ -381,10 +426,11 @@ function cleanup() {
 
   mediaRecorder = null;
   isRecording = false;
+  isPaused = false;
+  currentMode = 'screen-camera';
 }
 
 // Cleanup on page unload
 window.addEventListener('beforeunload', () => {
   cleanup();
 });
-

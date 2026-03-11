@@ -10,8 +10,9 @@ let dragOffset = { x: 0, y: 0 };
 let recordingMode = 'screen-camera'; // Default mode
 let isPaused = false;
 let recordingTimer = null;
-let recordingStartTime = null;
 let timerInterval = null;
+let elapsedSeconds = 0;
+let timerAnchor = null;
 
 // Create overlay with Shadow DOM
 function createOverlay() {
@@ -257,28 +258,6 @@ function createOverlay() {
   `;
   shadowRoot.appendChild(style);
 
-  // Create camera bubble (only if mode includes camera)
-  if (recordingMode !== 'screen-only') {
-    cameraBubble = document.createElement('div');
-    cameraBubble.id = 'camera-bubble';
-    cameraBubble.className = 'camera-bubble';
-    
-    const video = document.createElement('video');
-    video.autoplay = true;
-    video.playsInline = true;
-    video.muted = true;
-    video.id = 'camera-preview';
-    cameraBubble.appendChild(video);
-    
-    shadowRoot.appendChild(cameraBubble);
-
-    // Make camera bubble draggable
-    setupDragging();
-
-    // Start camera preview
-    startCameraPreview();
-  }
-
   // Create controls bar
   controlsBar = document.createElement('div');
   controlsBar.id = 'controls-bar';
@@ -333,13 +312,34 @@ function createOverlay() {
   controlsBar.appendChild(recordingIndicator);
   controlsBar.appendChild(controlButtons);
   shadowRoot.appendChild(controlsBar);
+}
 
-  // Start recording timer
-  startTimer();
+function ensureCameraBubble() {
+  if (cameraBubble) {
+    return;
+  }
+
+  cameraBubble = document.createElement('div');
+  cameraBubble.id = 'camera-bubble';
+  cameraBubble.className = 'camera-bubble';
+
+  const video = document.createElement('video');
+  video.autoplay = true;
+  video.playsInline = true;
+  video.muted = true;
+  video.id = 'camera-preview';
+  cameraBubble.appendChild(video);
+
+  shadowRoot.appendChild(cameraBubble);
+  setupDragging();
 }
 
 // Start camera preview
 async function startCameraPreview() {
+  if (cameraStream) {
+    return;
+  }
+
   try {
     cameraStream = await navigator.mediaDevices.getUserMedia({
       video: {
@@ -350,7 +350,7 @@ async function startCameraPreview() {
       audio: false
     });
 
-    const video = shadowRoot.getElementById('camera-preview');
+    const video = shadowRoot?.getElementById('camera-preview');
     if (video) {
       video.srcObject = cameraStream;
     }
@@ -393,65 +393,91 @@ function setupDragging() {
 }
 
 // Timer functions
-function startTimer() {
-  recordingStartTime = Date.now();
+function startTimer(reset = false) {
+  if (reset) {
+    elapsedSeconds = 0;
+  }
+  timerAnchor = Date.now();
   updateTimer();
+  if (timerInterval) {
+    clearInterval(timerInterval);
+  }
   timerInterval = setInterval(updateTimer, 1000);
 }
 
 function updateTimer() {
-  if (!recordingStartTime || !recordingTimer) return;
-  
-  const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
+  if (!recordingTimer) return;
+
+  const runningSeconds = timerAnchor ? Math.floor((Date.now() - timerAnchor) / 1000) : 0;
+  const elapsed = elapsedSeconds + runningSeconds;
   const minutes = Math.floor(elapsed / 60);
   const seconds = elapsed % 60;
   
   recordingTimer.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
-function stopTimer() {
+function stopTimer(commitElapsed = true) {
+  if (commitElapsed && timerAnchor) {
+    elapsedSeconds += Math.floor((Date.now() - timerAnchor) / 1000);
+  }
+  timerAnchor = null;
+
   if (timerInterval) {
     clearInterval(timerInterval);
     timerInterval = null;
   }
 }
 
+function resetPauseButton() {
+  const pauseBtn = shadowRoot?.getElementById('pause-recording-btn');
+  if (!pauseBtn) {
+    return;
+  }
+
+  pauseBtn.classList.remove('paused');
+  pauseBtn.title = 'Pause';
+  pauseBtn.innerHTML = `
+    <svg width="12" height="14" viewBox="0 0 12 14" fill="white">
+      <rect width="4" height="14" rx="1"/>
+      <rect x="8" width="4" height="14" rx="1"/>
+    </svg>
+  `;
+}
+
 // Handle pause/resume
 async function handlePauseResume() {
   const pauseBtn = shadowRoot.getElementById('pause-recording-btn');
-  
-  if (isPaused) {
-    // Resume
-    isPaused = false;
-    pauseBtn.classList.remove('paused');
-    pauseBtn.title = 'Pause';
-    pauseBtn.innerHTML = `
-      <svg width="12" height="14" viewBox="0 0 12 14" fill="white">
-        <rect width="4" height="14" rx="1"/>
-        <rect x="8" width="4" height="14" rx="1"/>
-      </svg>
-    `;
-    startTimer();
-  } else {
-    // Pause
-    isPaused = true;
-    pauseBtn.classList.add('paused');
-    pauseBtn.title = 'Resume';
-    pauseBtn.innerHTML = `
-      <svg width="12" height="14" viewBox="0 0 12 14" fill="white">
-        <path d="M2 1.5L11 7L2 12.5V1.5Z"/>
-      </svg>
-    `;
-    stopTimer();
-  }
-  
-  // Send pause/resume message to background
+  const shouldPause = !isPaused;
+
   try {
-    await chrome.runtime.sendMessage({ 
-      type: isPaused ? 'PAUSE_RECORDING' : 'RESUME_RECORDING' 
+    await chrome.runtime.sendMessage({
+      type: shouldPause ? 'PAUSE_RECORDING' : 'RESUME_RECORDING'
     });
+
+    isPaused = shouldPause;
+    if (isPaused) {
+      pauseBtn.classList.add('paused');
+      pauseBtn.title = 'Resume';
+      pauseBtn.innerHTML = `
+        <svg width="12" height="14" viewBox="0 0 12 14" fill="white">
+          <path d="M2 1.5L11 7L2 12.5V1.5Z"/>
+        </svg>
+      `;
+      stopTimer(true);
+    } else {
+      pauseBtn.classList.remove('paused');
+      pauseBtn.title = 'Pause';
+      pauseBtn.innerHTML = `
+        <svg width="12" height="14" viewBox="0 0 12 14" fill="white">
+          <rect width="4" height="14" rx="1"/>
+          <rect x="8" width="4" height="14" rx="1"/>
+        </svg>
+      `;
+      startTimer(false);
+    }
   } catch (error) {
     console.error('Error toggling pause:', error);
+    showError('Failed to update pause state');
   }
 }
 
@@ -460,7 +486,7 @@ async function handleStopRecording() {
   console.log('Overlay: Stop button clicked');
   
   // Stop timer
-  stopTimer();
+  stopTimer(false);
   
   // Stop camera stream
   if (cameraStream) {
@@ -468,10 +494,10 @@ async function handleStopRecording() {
     cameraStream = null;
   }
 
-  // Send message to popup to stop recording (popup handles the MediaRecorder)
+  // Send message to background to stop recording
   try {
-    await chrome.runtime.sendMessage({ type: 'STOP_RECORDING_FROM_OVERLAY' });
-    console.log('Overlay: Stop message sent to popup');
+    await chrome.runtime.sendMessage({ type: 'STOP_RECORDING' });
+    console.log('Overlay: Stop message sent to background');
   } catch (error) {
     console.error('Overlay: Error sending stop message:', error);
   }
@@ -488,6 +514,30 @@ function showOverlay(mode = 'screen-camera') {
     createOverlay();
   }
   overlayContainer.style.display = 'block';
+
+  // Reset control state and timer for each new recording session
+  isPaused = false;
+  resetPauseButton();
+  elapsedSeconds = 0;
+  timerAnchor = null;
+  if (recordingTimer) {
+    recordingTimer.textContent = '00:00';
+  }
+  startTimer(true);
+
+  if (recordingMode === 'screen-camera') {
+    ensureCameraBubble();
+    cameraBubble.classList.remove('hidden');
+    startCameraPreview();
+  } else {
+    if (cameraBubble) {
+      cameraBubble.classList.add('hidden');
+    }
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => track.stop());
+      cameraStream = null;
+    }
+  }
   
   // Position camera bubble in bottom left corner initially
   setTimeout(() => {
@@ -501,7 +551,14 @@ function showOverlay(mode = 'screen-camera') {
 // Hide overlay
 function hideOverlay() {
   // Stop timer
-  stopTimer();
+  stopTimer(false);
+  elapsedSeconds = 0;
+  timerAnchor = null;
+  isPaused = false;
+  resetPauseButton();
+  if (recordingTimer) {
+    recordingTimer.textContent = '00:00';
+  }
   
   if (overlayContainer) {
     overlayContainer.style.display = 'none';
@@ -516,7 +573,10 @@ function hideOverlay() {
 
 // Remove overlay completely
 function removeOverlay() {
-  stopTimer();
+  stopTimer(false);
+  elapsedSeconds = 0;
+  timerAnchor = null;
+  isPaused = false;
   
   if (cameraStream) {
     cameraStream.getTracks().forEach(track => track.stop());
@@ -557,4 +617,3 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 window.addEventListener('beforeunload', () => {
   removeOverlay();
 });
-

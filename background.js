@@ -94,6 +94,28 @@ async function closeOffscreenDocument() {
 
 // Store partial transfers for chunked uploads
 const activeTransfers = new Map();
+const ACTIVE_RECORDING_KEY = 'activeRecording';
+
+async function setActiveRecording(mode) {
+  try {
+    await chrome.storage.local.set({
+      [ACTIVE_RECORDING_KEY]: {
+        mode: mode || 'screen-camera',
+        startTime: Date.now()
+      }
+    });
+  } catch (error) {
+    console.warn('Background: Failed to persist active recording state:', error);
+  }
+}
+
+async function clearActiveRecording() {
+  try {
+    await chrome.storage.local.remove([ACTIVE_RECORDING_KEY]);
+  } catch (error) {
+    console.warn('Background: Failed to clear active recording state:', error);
+  }
+}
 
 // Handle messages from popup, content script, and offscreen document
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -123,12 +145,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  // Handle start recording
-  if (request.type === 'START_RECORDING' && !request.toOffscreen) {
-    // ... forwarding logic ...
-    // simplified for brevity in replacement, assuming original code structure
-  }
-
   // Handle Video Chunks (for large files)
   if (request.type === 'VIDEO_CHUNK') {
     const { transferId, chunkIndex, totalChunks, data, metadata } = request;
@@ -150,12 +166,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (transfer.receivedCount === totalChunks) {
       console.log('Background: All chunks received. Reassembling...');
       const fullBase64 = transfer.chunks.join('');
-      const { blobSize, mimeType } = transfer.metadata;
+      const { blobSize, mimeType, mode } = transfer.metadata;
 
       activeTransfers.delete(transferId); // Cleanup
 
       // Start upload
-      handleVideoUpload(fullBase64, blobSize, mimeType)
+      handleVideoUpload({ base64Data: fullBase64, blobSize, mimeType, mode })
         .then((result) => {
           // Notify popup of success via sendMessage or similar mechanism if possible
           // (Since response port is closed, we rely on broadcast)
@@ -178,6 +194,30 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // Handle start recording - forward to offscreen only if from popup/content
   if (request.type === 'START_RECORDING' && !isFromBackground) {
     console.log('Background: Received START_RECORDING request');
+    const requestedMode = request.mode || 'screen-camera';
+
+    if (requestedMode === 'camera-only') {
+      createOffscreenDocument()
+        .then(() => chrome.runtime.sendMessage({
+          type: 'START_RECORDING',
+          toOffscreen: true,
+          mode: requestedMode
+        }))
+        .then((offscreenResponse) => {
+          if (!offscreenResponse?.success) {
+            throw new Error(offscreenResponse?.error || 'Failed to start camera recording');
+          }
+          return setActiveRecording(requestedMode);
+        })
+        .then(() => {
+          sendResponse({ success: true });
+        })
+        .catch((error) => {
+          console.error('Background: Failed to start camera-only recording:', error);
+          sendResponse({ success: false, error: error.message || 'Failed to start camera recording' });
+        });
+      return true;
+    }
 
     // Get the current active tab to pass to desktopCapture
     chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
@@ -202,7 +242,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
       // Use chrome.desktopCapture to get screen stream
       // This API is designed for extensions and works with service workers
-      const sources = ['screen', 'window', 'tab'];
+      const sources = ['screen', 'window', 'tab', 'audio'];
 
       console.log('Background: Requesting desktop media...');
       chrome.desktopCapture.chooseDesktopMedia(sources, activeTab, (streamId) => {
@@ -221,8 +261,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           chrome.runtime.sendMessage({
             type: 'START_RECORDING',
             toOffscreen: true,
-            streamId: streamId
+            streamId: streamId,
+            mode: requestedMode
           })
+            .then((offscreenResponse) => {
+              if (!offscreenResponse?.success) {
+                throw new Error(offscreenResponse?.error || 'Failed to start recording');
+              }
+              return setActiveRecording(requestedMode);
+            })
             .then(() => {
               console.log('Background: Recording message sent successfully');
               sendResponse({ success: true });
@@ -241,7 +288,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // Handle pause recording
   if (request.type === 'PAUSE_RECORDING' && !isFromBackground) {
     chrome.runtime.sendMessage({ type: 'PAUSE_RECORDING', toOffscreen: true })
-      .then(() => {
+      .then((response) => {
+        if (!response?.success) {
+          throw new Error(response?.error || 'Failed to pause recording');
+        }
         sendResponse({ success: true });
       })
       .catch((error) => {
@@ -253,7 +303,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // Handle resume recording
   if (request.type === 'RESUME_RECORDING' && !isFromBackground) {
     chrome.runtime.sendMessage({ type: 'RESUME_RECORDING', toOffscreen: true })
-      .then(() => {
+      .then((response) => {
+        if (!response?.success) {
+          throw new Error(response?.error || 'Failed to resume recording');
+        }
         sendResponse({ success: true });
       })
       .catch((error) => {
@@ -271,7 +324,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     // Then stop the actual recording in offscreen
     chrome.runtime.sendMessage({ type: 'STOP_RECORDING', toOffscreen: true })
-      .then(() => {
+      .then((response) => {
+        if (!response?.success) {
+          throw new Error(response?.error || 'Failed to stop recording');
+        }
+        clearActiveRecording().catch(() => { });
         sendResponse({ success: true });
       })
       .catch((error) => {
@@ -285,8 +342,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'VIDEO_BLOB') {
     console.log('Background: Received VIDEO_BLOB, size:', request.blobSize);
     console.log('Background: Starting video upload...');
+    clearActiveRecording().catch(() => { });
+
     // Don't await here to keep listener responsive
-    handleVideoUpload(request.base64Data, request.blobSize, request.mimeType)
+    handleVideoUpload({
+      base64Data: request.base64Data,
+      arrayBuffer: request.arrayBuffer,
+      blobSize: request.blobSize,
+      mimeType: request.mimeType,
+      mode: request.mode
+    })
       .then((result) => {
         console.log('Background: Upload successful, result:', result);
         sendResponse({ success: true, link: result.link });
@@ -322,6 +387,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // Handle recording errors
   if (request.type === 'RECORDING_ERROR') {
     console.error('Recording error:', request.error);
+    clearActiveRecording().catch(() => { });
+    chrome.runtime.sendMessage({
+      type: 'RECORDING_ERROR',
+      error: request.error,
+      toPopup: true
+    }).catch(() => {
+      // Popup might be closed, ignore
+    });
     chrome.notifications.create({
       type: 'basic',
       title: 'Recording Error',
@@ -335,7 +408,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 // Send progress update to popup
-function sendProgressUpdate(percent, status) {
+async function sendProgressUpdate(percent, status) {
   chrome.runtime.sendMessage({
     type: 'UPLOAD_PROGRESS',
     percent: percent,
@@ -344,10 +417,24 @@ function sendProgressUpdate(percent, status) {
   }).catch(() => {
     // Popup might be closed, ignore
   });
+
+  try {
+    const currentUpload = await getUploadState();
+    if (currentUpload && currentUpload.status === 'uploading') {
+      await saveUploadState({
+        ...currentUpload,
+        percent,
+        statusText: status,
+        updatedAt: Date.now()
+      });
+    }
+  } catch (error) {
+    console.warn('Background: Failed to persist upload progress:', error);
+  }
 }
 
 // Handle video upload
-async function handleVideoUpload(base64Data, blobSize, mimeType) {
+async function handleVideoUpload({ base64Data = null, arrayBuffer = null, blobSize = 0, mimeType = 'video/webm', mode = 'screen-camera' }) {
   const recordingId = `rec_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
   try {
@@ -371,23 +458,29 @@ async function handleVideoUpload(base64Data, blobSize, mimeType) {
     }
     console.log('Background: Auth token obtained');
 
-    // Convert Base64 to Blob
-    console.log('Background: Converting base64 to blob...');
-
-    if (!base64Data || !base64Data.startsWith('data:')) {
-      throw new Error('Received empty or invalid base64 data');
-    }
+    // Convert incoming video data to Blob
+    console.log('Background: Converting video data to blob...');
+    let blob = null;
 
     sendProgressUpdate(30, 'Processing video...');
-    const res = await fetch(base64Data);
-    const blob = await res.blob();
+
+    if (arrayBuffer) {
+      blob = new Blob([arrayBuffer], { type: mimeType || 'video/webm' });
+    } else if (base64Data && base64Data.startsWith('data:')) {
+      const res = await fetch(base64Data);
+      blob = await res.blob();
+    } else {
+      throw new Error('Received empty or invalid video data');
+    }
+
+    const normalizedBlobSize = blobSize || blob.size;
 
     // Skip thumbnail - service workers don't have DOM access
     console.log('Background: Skipping thumbnail (no DOM in service worker)');
     const thumbnail = null;
 
     // Log upload info
-    const sizeMB = (blobSize / 1024 / 1024).toFixed(2);
+    const sizeMB = (normalizedBlobSize / 1024 / 1024).toFixed(2);
     console.log(`Background: Uploading video: ${sizeMB} MB`);
 
     // Upload to Drive
@@ -419,8 +512,8 @@ async function handleVideoUpload(base64Data, blobSize, mimeType) {
       title: `Screen Recording ${new Date().toLocaleString()}`,
       thumbnail: thumbnail,
       duration: 0, // Could calculate from video if needed
-      size: blobSize,
-      mode: 'screen-camera', // Will be updated to use actual mode
+      size: normalizedBlobSize,
+      mode: mode || 'screen-camera',
       timestamp: Date.now()
     };
 
@@ -510,10 +603,12 @@ async function handleVideoUpload(base64Data, blobSize, mimeType) {
 // Initialize: Check auth status on startup
 chrome.runtime.onStartup.addListener(() => {
   checkAuthStatus();
+  clearActiveRecording().catch(() => { });
 });
 
 chrome.runtime.onInstalled.addListener(() => {
   checkAuthStatus();
+  clearActiveRecording().catch(() => { });
 });
 
 // Handle notification button clicks
